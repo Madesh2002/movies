@@ -163,8 +163,15 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
         setError(null);
       });
       player.on('pause', () => setIsPlaying(false));
-      player.on('timeupdate', () => setCurrentTime(player.currentTime));
-      player.on('ready', () => setDuration(player.duration));
+      
+      const onLoadedMetadata = () => setDuration(video.duration);
+      const onDurationChange = () => setDuration(video.duration);
+      const onTimeUpdate = () => setCurrentTime(video.currentTime);
+
+      video.addEventListener('loadedmetadata', onLoadedMetadata);
+      video.addEventListener('durationchange', onDurationChange);
+      video.addEventListener('timeupdate', onTimeUpdate);
+
       player.on('waiting', () => setIsBuffering(true));
       player.on('playing', () => setIsBuffering(false));
       
@@ -177,6 +184,9 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
       };
 
       return () => {
+        video.removeEventListener('loadedmetadata', onLoadedMetadata);
+        video.removeEventListener('durationchange', onDurationChange);
+        video.removeEventListener('timeupdate', onTimeUpdate);
         if (playerRef.current) playerRef.current.destroy();
         if (hlsRef.current) hlsRef.current.destroy();
       };
@@ -200,10 +210,18 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isLocked || !playerRef.current || error) return;
+    if (isLocked || !videoRef.current || error) return;
     const time = parseFloat(e.target.value);
-    playerRef.current.currentTime = time;
+    
+    // Update both video element and state
+    videoRef.current.currentTime = time;
     setCurrentTime(time);
+    
+    // Also update Plyr if it's out of sync
+    if (playerRef.current) {
+      playerRef.current.currentTime = time;
+    }
+    
     resetControlsTimeout();
   };
 
@@ -246,6 +264,7 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
   };
 
   const formatTime = (time: number) => {
+    if (isNaN(time) || !isFinite(time)) return '00:00';
     const h = Math.floor(time / 3600);
     const m = Math.floor((time % 3600) / 60);
     const s = Math.floor(time % 60);
@@ -266,57 +285,83 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
 
   const handleDownload = async () => {
     const videoUrl = videoRef.current?.currentSrc || selectedUrl;
-    setDownloadStatus("REQUESTING FILE...");
+    setDownloadStatus("PREPARING...");
+    setDownloadProgress(0);
     
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for initial request
+      const response = await fetch(videoUrl);
       
-      const response = await fetch(videoUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       
-      if (!response.ok) throw new Error(`Server responded with ${response.status}`);
-      if (!response.body) throw new Error('No body');
+      const contentLength = response.headers.get('content-length');
+      const total = contentLength ? parseInt(contentLength, 10) : 0;
       
-      const reader = response.body.getReader();
-      const contentLength = +(response.headers.get('Content-Length') || 0);
-      let receivedLength = 0;
-      let chunks = []; 
-      
-      while(true) {
-        const {done, value} = await reader.read();
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('ReadableStream not supported');
+
+      let loaded = 0;
+      const chunks = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(value);
-        receivedLength += value.length;
         
-        if (contentLength) {
-          const pct = Math.round((receivedLength / contentLength) * 100);
-          setDownloadProgress(pct);
-          setDownloadStatus("DOWNLOADING...");
+        chunks.push(value);
+        loaded += value.length;
+        
+        if (total) {
+          const progress = Math.round((loaded / total) * 100);
+          setDownloadProgress(progress);
+          setDownloadStatus(`DOWNLOADING ${progress}%`);
+        } else {
+          setDownloadStatus(`DOWNLOADING... ${(loaded / (1024 * 1024)).toFixed(1)}MB`);
         }
       }
+
+      setDownloadStatus("FINALIZING...");
+      const blob = new Blob(chunks, { type: response.headers.get('content-type') || 'video/mp4' });
+      const blobUrl = window.URL.createObjectURL(blob);
       
-      const blob = new Blob(chunks);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const extension = selectedUrl.split('.').pop()?.split(/[?#]/)[0] || 'mp4';
-      a.download = `${movie.title.replace(/\s+/g, '_')}_BharatPrime.${extension}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      const link = document.createElement('a');
+      link.href = blobUrl;
       
-      setDownloadStatus("SAVED TO DEVICE");
-      setTimeout(() => setDownloadStatus('READY'), 3000);
-      setDownloadProgress(0);
-    } catch(e) { 
-      setDownloadStatus("OPENING DIRECT LINK...");
-      console.error(e);
-      // Fallback: Open in new tab if blob download fails
-      window.open(videoUrl, '_blank');
-      setTimeout(() => setDownloadStatus('READY'), 3000);
-      setDownloadProgress(0);
+      // Extract filename from URL or use movie title
+      const urlPath = new URL(videoUrl).pathname;
+      const fileName = urlPath.split('/').pop() || `${movie.title.replace(/\s+/g, '_')}.mp4`;
+      
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+        setDownloadStatus("DOWNLOAD COMPLETE");
+        setTimeout(() => {
+          setDownloadStatus('READY');
+          setDownloadProgress(0);
+        }, 3000);
+      }, 100);
+
+    } catch (error) {
+      console.error('Download failed:', error);
+      setDownloadStatus("CORS BLOCKED - OPENING LINK");
+      
+      // Fallback: If fetch fails (usually CORS), try direct download attribute
+      // though it might still just play in browser if cross-origin
+      const link = document.createElement('a');
+      link.href = videoUrl;
+      link.target = "_blank";
+      link.download = `${movie.title.replace(/\s+/g, '_')}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setTimeout(() => {
+        setDownloadStatus('READY');
+        setDownloadProgress(0);
+      }, 5000);
     }
   };
 
