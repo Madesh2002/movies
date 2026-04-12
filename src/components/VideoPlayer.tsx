@@ -65,29 +65,9 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
   const toggleOrientation = async () => {
     if (isLocked) return;
     
-    try {
-      if (!document.fullscreenElement) {
-        await containerRef.current?.requestFullscreen();
-      }
-      
-      const orientation = (window.screen as any).orientation;
-      if (orientation?.lock) {
-        if (!isLandscape) {
-          await orientation.lock('landscape');
-          setIsLandscape(true);
-        } else {
-          await orientation.lock('portrait');
-          setIsLandscape(false);
-        }
-      } else {
-        // Fallback: Just toggle a state that we could use for CSS rotation if needed
-        setIsLandscape(!isLandscape);
-      }
-    } catch (err) {
-      console.error("Orientation lock failed:", err);
-      // Fallback for browsers that don't support locking or if it fails
-      setIsLandscape(!isLandscape);
-    }
+    // Toggle landscape state to trigger CSS rotation fallback
+    // since ScreenOrientation.lock is often blocked in sandboxed iframes
+    setIsLandscape(!isLandscape);
     resetControlsTimeout();
   };
 
@@ -108,27 +88,9 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
 
   useEffect(() => {
     if (isPlaying) {
-      const autoRotate = async () => {
-        try {
-          // Attempt fullscreen first as it's often a prerequisite for orientation lock
-          if (!document.fullscreenElement && containerRef.current) {
-            await containerRef.current.requestFullscreen().catch(() => {});
-          }
-          
-          const orientation = (window.screen as any).orientation || (window.screen as any).mozOrientation || (window.screen as any).msOrientation;
-          if (orientation?.lock) {
-            await orientation.lock('landscape').catch(() => {});
-            setIsLandscape(true);
-          } else {
-            // Fallback for iOS/Safari: Set landscape state to trigger CSS rotation
-            setIsLandscape(true);
-          }
-        } catch (e) {
-          console.log("Auto-rotate failed:", e);
-          setIsLandscape(true); // Still set to true to trigger CSS fallback
-        }
-      };
-      autoRotate();
+      // Set landscape state to true to trigger CSS rotation fallback
+      // since ScreenOrientation.lock is blocked in sandboxed iframes
+      setIsLandscape(true);
     }
   }, [isPlaying]);
 
