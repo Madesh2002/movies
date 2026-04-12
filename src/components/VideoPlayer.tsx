@@ -274,9 +274,7 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
   const resetControlsTimeout = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    if (!isLocked) {
-      controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 2000);
-    }
+    controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 2000);
   };
 
   const handleMouseMove = () => {
@@ -330,7 +328,8 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onMouseMove={handleMouseMove}
-      className={`fixed inset-0 z-[500] bg-black flex flex-col items-center justify-center overflow-hidden select-none ${!showControls && !isLocked ? 'cursor-none' : 'cursor-default'} ${isLandscape && isPortrait ? 'rotate-container' : ''}`}
+      onClick={handleMouseMove}
+      className={`fixed inset-0 z-[500] bg-black flex flex-col items-center justify-center overflow-hidden select-none ${!showControls ? 'cursor-none' : 'cursor-default'} ${isLandscape && isPortrait ? 'rotate-container' : ''}`}
     >
       <style dangerouslySetInnerHTML={{ __html: `
         .rotate-container {
@@ -406,7 +405,7 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
 
         {/* Custom Controls Overlay */}
         <AnimatePresence>
-          {(showControls || isLocked) && !error && (
+          {showControls && !error && (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
