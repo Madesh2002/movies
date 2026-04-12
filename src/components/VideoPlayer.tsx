@@ -39,6 +39,15 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isLandscape, setIsLandscape] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(window.innerHeight > window.innerWidth);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const toggleFullscreen = () => {
     if (isLocked) return;
@@ -95,17 +104,25 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
   }, []);
 
   useEffect(() => {
-    if (isPlaying && !isLandscape) {
+    if (isPlaying) {
       const autoRotate = async () => {
         try {
-          const orientation = (window.screen as any).orientation;
-          if (orientation?.lock && !document.fullscreenElement) {
-            await containerRef.current?.requestFullscreen();
-            await orientation.lock('landscape');
+          // Attempt fullscreen first as it's often a prerequisite for orientation lock
+          if (!document.fullscreenElement && containerRef.current) {
+            await containerRef.current.requestFullscreen().catch(() => {});
+          }
+          
+          const orientation = (window.screen as any).orientation || (window.screen as any).mozOrientation || (window.screen as any).msOrientation;
+          if (orientation?.lock) {
+            await orientation.lock('landscape').catch(() => {});
+            setIsLandscape(true);
+          } else {
+            // Fallback for iOS/Safari: Set landscape state to trigger CSS rotation
             setIsLandscape(true);
           }
         } catch (e) {
           console.log("Auto-rotate failed:", e);
+          setIsLandscape(true); // Still set to true to trigger CSS fallback
         }
       };
       autoRotate();
@@ -307,8 +324,19 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onMouseMove={handleMouseMove}
-      className={`fixed inset-0 z-[500] bg-black flex flex-col items-center justify-center overflow-hidden select-none ${!showControls && !isLocked ? 'cursor-none' : 'cursor-default'}`}
+      className={`fixed inset-0 z-[500] bg-black flex flex-col items-center justify-center overflow-hidden select-none ${!showControls && !isLocked ? 'cursor-none' : 'cursor-default'} ${isLandscape && isPortrait ? 'rotate-container' : ''}`}
     >
+      <style dangerouslySetInnerHTML={{ __html: `
+        .rotate-container {
+          width: 100vh !important;
+          height: 100vw !important;
+          position: fixed !important;
+          top: 50% !important;
+          left: 50% !important;
+          transform: translate(-50%, -50%) rotate(90deg) !important;
+          z-index: 9999 !important;
+        }
+      `}} />
       {/* Video Element */}
       <div className="relative w-full h-full flex items-center justify-center">
         <video 
