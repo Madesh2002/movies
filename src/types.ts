@@ -10,6 +10,7 @@ export interface Movie {
   description: string;
   videoUrl: string;
   links?: { label: string; url: string }[];
+  chapters?: { title: string; time: number }[];
   createdAt?: any;
   updatedAt?: any;
 }

@@ -6,7 +6,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, Download, Play, Pause, RotateCcw, RotateCw, 
   Settings, PictureInPicture2, Lock, Unlock, AlertCircle,
-  RefreshCcw, ScreenShare, Maximize, Minimize, Volume2, VolumeX, Volume1
+  RefreshCcw, ScreenShare, Maximize, Minimize, Volume2, VolumeX, Volume1,
+  MoreVertical, ChevronLeft, Menu
 } from 'lucide-react';
 import { Movie } from '../types';
 
@@ -36,6 +37,8 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
   const [isMuted, setIsMuted] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsView, setSettingsView] = useState<'main' | 'speed' | 'chapters'>('main');
+  const [hoveredChapter, setHoveredChapter] = useState<{ title: string; x: number } | null>(null);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isLandscape, setIsLandscape] = useState(false);
@@ -448,9 +451,9 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
                   </button>
                   
                   <div className="flex items-center gap-8 md:gap-12">
-                    <button onClick={() => skip(-5)} className="relative p-2 hover:bg-white/10 rounded-full transition-colors text-white group">
+                    <button onClick={() => skip(-10)} className="relative p-2 hover:bg-white/10 rounded-full transition-colors text-white group">
                       <RotateCcw size={40} />
-                      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black mt-1">5</span>
+                      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black mt-1">10</span>
                     </button>
 
                     <button onClick={togglePlay} className="p-6 bg-white/10 hover:bg-white/20 rounded-full transition-all text-white scale-125 hover:scale-150">
@@ -479,20 +482,106 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
                     initial={{ opacity: 0, scale: 0.9, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                    className="absolute bottom-24 right-6 bg-[#1a1a1a]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-4 w-48 z-50 shadow-2xl"
+                    className="absolute bottom-16 right-6 bg-[#1a1a1a]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-2 w-64 z-50 shadow-2xl"
                   >
-                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-3 ml-1">Playback Speed</div>
                     <div className="space-y-1">
-                      {[0.75, 1, 1.25, 1.5, 2].map((speed) => (
-                        <button
-                          key={speed}
-                          onClick={() => handleSpeedChange(speed)}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm font-bold transition-colors flex items-center justify-between ${playbackSpeed === speed ? 'bg-red-600 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
-                        >
-                          <span>{speed === 1 ? 'Normal' : `${speed}x`}</span>
-                          {playbackSpeed === speed && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-                        </button>
-                      ))}
+                      {settingsView === 'main' && (
+                        <>
+                          <button
+                            onClick={handleDownload}
+                            className="w-full text-left px-4 py-3 rounded-xl text-sm font-bold text-zinc-300 hover:bg-white/5 hover:text-white transition-colors flex items-center gap-3"
+                          >
+                            <Download size={18} />
+                            <span>Download</span>
+                          </button>
+
+                          <div className="h-px bg-white/5 mx-2" />
+
+                          <button
+                            onClick={() => setSettingsView('speed')}
+                            className="w-full text-left px-4 py-3 rounded-xl text-sm font-bold text-zinc-300 hover:bg-white/5 hover:text-white transition-colors flex items-center justify-between"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Settings size={18} />
+                              <span>Playback Speed</span>
+                            </div>
+                            <span className="text-red-600 text-xs">{playbackSpeed === 1 ? 'Normal' : `${playbackSpeed}x`}</span>
+                          </button>
+
+                          {movie.chapters && movie.chapters.length > 0 && (
+                            <button
+                              onClick={() => setSettingsView('chapters')}
+                              className="w-full text-left px-4 py-3 rounded-xl text-sm font-bold text-zinc-300 hover:bg-white/5 hover:text-white transition-colors flex items-center justify-between"
+                            >
+                              <div className="flex items-center gap-3">
+                                <Menu size={18} />
+                                <span>Chapters</span>
+                              </div>
+                              <span className="text-zinc-500 text-xs">{movie.chapters.length}</span>
+                            </button>
+                          )}
+
+                          <div className="h-px bg-white/5 mx-2" />
+
+                          <button
+                            onClick={togglePip}
+                            className="w-full text-left px-4 py-3 rounded-xl text-sm font-bold text-zinc-300 hover:bg-white/5 hover:text-white transition-colors flex items-center gap-3"
+                          >
+                            <PictureInPicture2 size={18} />
+                            <span>Picture in picture</span>
+                          </button>
+                        </>
+                      )}
+
+                      {settingsView === 'speed' && (
+                        <div className="p-2">
+                          <button 
+                            onClick={() => setSettingsView('main')}
+                            className="flex items-center gap-2 text-zinc-500 hover:text-white text-[10px] font-black uppercase tracking-widest mb-3 ml-1"
+                          >
+                            <ChevronLeft size={14} /> Back
+                          </button>
+                          <div className="grid grid-cols-1 gap-1">
+                            {[0.75, 1, 1.25, 1.5, 2].map((speed) => (
+                              <button
+                                key={speed}
+                                onClick={() => { handleSpeedChange(speed); setSettingsView('main'); }}
+                                className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-between ${playbackSpeed === speed ? 'bg-red-600 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
+                              >
+                                <span>{speed === 1 ? 'Normal' : `${speed}x`}</span>
+                                {playbackSpeed === speed && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {settingsView === 'chapters' && (
+                        <div className="p-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                          <button 
+                            onClick={() => setSettingsView('main')}
+                            className="flex items-center gap-2 text-zinc-500 hover:text-white text-[10px] font-black uppercase tracking-widest mb-3 ml-1"
+                          >
+                            <ChevronLeft size={14} /> Back
+                          </button>
+                          <div className="space-y-1">
+                            {movie.chapters?.map((chapter, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => { 
+                                  if (videoRef.current) videoRef.current.currentTime = chapter.time;
+                                  setSettingsView('main');
+                                  setShowSettings(false);
+                                }}
+                                className="w-full text-left px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group"
+                              >
+                                <div className="text-sm font-bold text-white group-hover:text-red-600 transition-colors">{chapter.title}</div>
+                                <div className="text-[10px] font-mono text-zinc-500">{formatTime(chapter.time)}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -500,27 +589,32 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
 
               {/* Bottom Bar */}
               {!isLocked && (
-                <div className="w-full px-4 pb-2 space-y-4">
+                <div className="w-full px-4 pb-2 space-y-2">
                   {/* Controls Row */}
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="bg-black/60 px-3 py-1.5 rounded-xl text-white font-mono text-sm backdrop-blur-md border border-white/10 shadow-xl">
-                        {formatTime(currentTime)}
+                    <div className="flex items-center gap-3">
+                      <button onClick={togglePlay} className="text-white hover:scale-110 transition-transform">
+                        {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" />}
+                      </button>
+                      <button onClick={() => skip(-10)} className="text-white/80 hover:text-white transition-colors" title="Back 10s">
+                        <RotateCcw size={20} />
+                      </button>
+                      <button onClick={() => skip(10)} className="text-white/80 hover:text-white transition-colors" title="Forward 10s">
+                        <RotateCw size={20} />
+                      </button>
+                      <div className="text-white font-mono text-sm tracking-tight ml-2">
+                        {formatTime(currentTime)} <span className="text-white/40 mx-1">/</span> {duration > 0 ? formatTime(duration) : '00:00'}
                       </div>
                     </div>
                     
-                    <div className="flex items-center gap-3 md:gap-5">
-                      <div className="bg-black/60 px-3 py-1.5 rounded-xl text-white font-mono text-sm backdrop-blur-md border border-white/10 shadow-xl">
-                        {duration > 0 ? formatTime(duration) : '00:00'}
-                      </div>
-                      
+                    <div className="flex items-center gap-2 md:gap-4">
                       {/* Volume Control */}
                       <div className="flex items-center gap-2 group/volume">
                         <button 
                           onClick={toggleMute}
                           className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
                         >
-                          {isMuted || volume === 0 ? <VolumeX size={24} /> : volume < 0.5 ? <Volume1 size={24} /> : <Volume2 size={24} />}
+                          {isMuted || volume === 0 ? <VolumeX size={20} /> : volume < 0.5 ? <Volume1 size={20} /> : <Volume2 size={20} />}
                         </button>
                         <div className="w-0 group-hover/volume:w-24 transition-all duration-300 overflow-hidden flex items-center">
                           <input 
@@ -535,41 +629,83 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <button 
-                          onClick={() => setIsFitCover(!isFitCover)}
-                          className="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-white text-[11px] font-black uppercase tracking-widest transition-all border border-white/10 backdrop-blur-md active:scale-95"
-                        >
-                          {isFitCover ? 'FIT' : 'FILL'}
-                        </button>
-                        <button 
-                          onClick={toggleFullscreen}
-                          className="p-2.5 bg-white/10 hover:bg-white/20 rounded-full transition-all text-white border border-white/10 backdrop-blur-md active:scale-95"
-                          title="Fullscreen"
-                        >
-                          {document.fullscreenElement ? <Minimize size={22} /> : <Maximize size={22} />}
-                        </button>
-                      </div>
+                      <button 
+                        onClick={() => setIsFitCover(!isFitCover)}
+                        className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
+                        title={isFitCover ? 'Fit' : 'Fill'}
+                      >
+                        <ScreenShare size={20} className={isFitCover ? 'text-red-600' : ''} />
+                      </button>
+
+                      <button 
+                        onClick={toggleFullscreen}
+                        className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
+                        title="Fullscreen"
+                      >
+                        {document.fullscreenElement ? <Minimize size={20} /> : <Maximize size={20} />}
+                      </button>
+
+                      <button 
+                        onClick={() => setShowSettings(!showSettings)}
+                        className={`p-2 hover:bg-white/10 rounded-full transition-colors text-white ${showSettings ? 'bg-white/10' : ''}`}
+                      >
+                        <MoreVertical size={20} />
+                      </button>
                     </div>
                   </div>
 
                   {/* Progress Bar Row */}
-                  <div className="relative w-full h-4 flex items-center group px-1">
+                  <div className="relative w-full h-6 flex items-center group">
+                    {/* Chapter Markers */}
+                    <div className="absolute inset-x-0 h-1.5 flex items-center pointer-events-none z-20">
+                      {movie.chapters?.map((chapter, idx) => (
+                        <div 
+                          key={idx}
+                          className="absolute w-0.5 h-full bg-black/40"
+                          style={{ left: `${(chapter.time / (duration || 1)) * 100}%` }}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Chapter Hover Title */}
+                    <AnimatePresence>
+                      {hoveredChapter && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: -25 }}
+                          exit={{ opacity: 0 }}
+                          className="absolute bg-red-600 text-white text-[10px] font-black px-2 py-1 rounded-md whitespace-nowrap z-50 shadow-lg"
+                          style={{ left: `${hoveredChapter.x}%`, transform: 'translateX(-50%)' }}
+                        >
+                          {hoveredChapter.title}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
                     <input 
                       type="range"
                       min="0"
                       max={duration || 0}
                       value={currentTime}
                       onChange={handleSeek}
-                      className="absolute w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-red-600 outline-none z-10"
+                      onMouseMove={(e) => {
+                        if (!movie.chapters || !duration) return;
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const x = ((e.clientX - rect.left) / rect.width) * duration;
+                        const chapter = [...movie.chapters].reverse().find(c => c.time <= x);
+                        if (chapter) {
+                          setHoveredChapter({ 
+                            title: chapter.title, 
+                            x: (chapter.time / duration) * 100 
+                          });
+                        }
+                      }}
+                      onMouseLeave={() => setHoveredChapter(null)}
+                      className="absolute w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-red-600 outline-none z-10"
                     />
                     <div 
-                      className="h-1.5 bg-red-600 rounded-full pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 shadow-[0_0_15px_rgba(220,38,38,0.6)]"
+                      className="h-1 bg-red-600 rounded-full pointer-events-none absolute left-0 top-1/2 -translate-y-1/2"
                       style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
-                    />
-                    <div 
-                      className="absolute h-3 w-3 bg-red-600 rounded-full top-1/2 -translate-y-1/2 pointer-events-none shadow-[0_0_10px_rgba(220,38,38,0.8)] opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ left: `calc(${(currentTime / (duration || 1)) * 100}% - 6px)` }}
                     />
                   </div>
                 </div>
