@@ -500,65 +500,77 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
 
               {/* Bottom Bar */}
               {!isLocked && (
-                <div className="space-y-4 w-full px-2">
-                  <div className="flex items-center gap-4">
-                    <span className="text-white font-mono text-sm min-w-[60px] text-center bg-black/40 px-2 py-1 rounded backdrop-blur-sm">
-                      {formatTime(currentTime)}
-                    </span>
-                    <div className="relative flex-1 h-8 flex items-center group">
-                      <input 
-                        type="range"
-                        min="0"
-                        max={duration || 0}
-                        value={currentTime}
-                        onChange={handleSeek}
-                        className="absolute w-full h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-red-600 outline-none z-10"
-                      />
-                      <div 
-                        className="h-1.5 bg-red-600 rounded-full pointer-events-none absolute left-0 top-1/2 -translate-y-1/2"
-                        style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
-                      />
-                    </div>
-                    <span className="text-white font-mono text-sm min-w-[60px] text-center bg-black/40 px-2 py-1 rounded backdrop-blur-sm">
-                      {formatTime(duration)}
-                    </span>
-
-                    {/* Volume Control */}
-                    <div className="flex items-center gap-2 group/volume ml-2">
-                      <button 
-                        onClick={toggleMute}
-                        className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
-                      >
-                        {isMuted || volume === 0 ? <VolumeX size={20} /> : volume < 0.5 ? <Volume1 size={20} /> : <Volume2 size={20} />}
-                      </button>
-                      <div className="w-0 group-hover/volume:w-24 transition-all duration-300 overflow-hidden flex items-center">
-                        <input 
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={isMuted ? 0 : volume}
-                          onChange={handleVolumeChange}
-                          className="w-20 h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-white outline-none"
-                        />
+                <div className="w-full px-4 pb-2 space-y-4">
+                  {/* Controls Row */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-black/60 px-3 py-1.5 rounded-xl text-white font-mono text-sm backdrop-blur-md border border-white/10 shadow-xl">
+                        {formatTime(currentTime)}
                       </div>
                     </div>
+                    
+                    <div className="flex items-center gap-3 md:gap-5">
+                      <div className="bg-black/60 px-3 py-1.5 rounded-xl text-white font-mono text-sm backdrop-blur-md border border-white/10 shadow-xl">
+                        {duration > 0 ? formatTime(duration) : '00:00'}
+                      </div>
+                      
+                      {/* Volume Control */}
+                      <div className="flex items-center gap-2 group/volume">
+                        <button 
+                          onClick={toggleMute}
+                          className="p-2 hover:bg-white/10 rounded-full transition-colors text-white"
+                        >
+                          {isMuted || volume === 0 ? <VolumeX size={24} /> : volume < 0.5 ? <Volume1 size={24} /> : <Volume2 size={24} />}
+                        </button>
+                        <div className="w-0 group-hover/volume:w-24 transition-all duration-300 overflow-hidden flex items-center">
+                          <input 
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={isMuted ? 0 : volume}
+                            onChange={handleVolumeChange}
+                            className="w-20 h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-white outline-none"
+                          />
+                        </div>
+                      </div>
 
-                    <div className="flex items-center gap-2 ml-auto">
-                      <button 
-                        onClick={() => setIsFitCover(!isFitCover)}
-                        className="px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded text-white text-[10px] font-black uppercase tracking-widest transition-colors border border-white/10"
-                      >
-                        {isFitCover ? 'Fit' : 'Fill'}
-                      </button>
-                      <button 
-                        onClick={toggleFullscreen}
-                        className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-white border border-white/10"
-                        title="Fullscreen"
-                      >
-                        {document.fullscreenElement ? <Minimize size={18} /> : <Maximize size={18} />}
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={() => setIsFitCover(!isFitCover)}
+                          className="px-5 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-white text-[11px] font-black uppercase tracking-widest transition-all border border-white/10 backdrop-blur-md active:scale-95"
+                        >
+                          {isFitCover ? 'FIT' : 'FILL'}
+                        </button>
+                        <button 
+                          onClick={toggleFullscreen}
+                          className="p-2.5 bg-white/10 hover:bg-white/20 rounded-full transition-all text-white border border-white/10 backdrop-blur-md active:scale-95"
+                          title="Fullscreen"
+                        >
+                          {document.fullscreenElement ? <Minimize size={22} /> : <Maximize size={22} />}
+                        </button>
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Progress Bar Row */}
+                  <div className="relative w-full h-4 flex items-center group px-1">
+                    <input 
+                      type="range"
+                      min="0"
+                      max={duration || 0}
+                      value={currentTime}
+                      onChange={handleSeek}
+                      className="absolute w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-red-600 outline-none z-10"
+                    />
+                    <div 
+                      className="h-1.5 bg-red-600 rounded-full pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 shadow-[0_0_15px_rgba(220,38,38,0.6)]"
+                      style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
+                    />
+                    <div 
+                      className="absolute h-3 w-3 bg-red-600 rounded-full top-1/2 -translate-y-1/2 pointer-events-none shadow-[0_0_10px_rgba(220,38,38,0.8)] opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ left: `calc(${(currentTime / (duration || 1)) * 100}% - 6px)` }}
+                    />
                   </div>
                 </div>
               )}

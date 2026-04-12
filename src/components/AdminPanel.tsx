@@ -70,32 +70,14 @@ export default function AdminPanel({
     const snap = await getDoc(doc(db, "config", "admin_pass"));
     if (snap.exists()) {
       const data = snap.data();
-      const now = new Date();
-      const expiry = data.expiresAt ? data.expiresAt.toDate() : null;
       
       if (!data.value || data.value.trim() === "") {
         setPinStatus({ text: "● NO PIN SET", color: "#888" });
         setExpiryWarning(null);
-      } else if (expiry && now > expiry) {
-        setPinStatus({ text: "● SYSTEM PIN EXPIRED", color: "#ff4d4d" });
-        setPin("");
-        setExpiryWarning("System PIN has expired! Please update it immediately to maintain access.");
       } else {
         setPinStatus({ text: "● SYSTEM PIN ACTIVE", color: "#2ecc71" });
         setPin(data.value);
-        
-        // Check if expiring soon (less than 3 hours)
-        if (expiry) {
-          const diffMs = expiry.getTime() - now.getTime();
-          const diffHours = diffMs / (1000 * 60 * 60);
-          if (diffHours < 3) {
-            const minutes = Math.round((diffHours % 1) * 60);
-            const hours = Math.floor(diffHours);
-            setExpiryWarning(`Warning: System PIN expires in ${hours}h ${minutes}m. Please update it soon.`);
-          } else {
-            setExpiryWarning(null);
-          }
-        }
+        setExpiryWarning(null);
       }
     } else {
       setPinStatus({ text: "● NO PIN SET", color: "#888" });
@@ -109,12 +91,8 @@ export default function AdminPanel({
       return;
     }
     
-    let expiry = new Date();
-    expiry.setHours(7, 0, 0, 0);
-    if (new Date() > expiry) expiry.setDate(expiry.getDate() + 1);
-    
     try {
-      await setDoc(doc(db, "config", "admin_pass"), { value: pin, expiresAt: expiry, updatedAt: serverTimestamp() });
+      await setDoc(doc(db, "config", "admin_pass"), { value: pin, updatedAt: serverTimestamp() });
       await addDoc(collection(db, "config", "admin_pass", "history"), { pin, updatedAt: serverTimestamp() });
       
       // Force logout all other users by clearing the authorized_ips collection

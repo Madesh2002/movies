@@ -56,9 +56,7 @@ const PasswordGate = ({ onAuthorized }: { onAuthorized: () => void }) => {
         const now = new Date();
         const expiry = data.expiresAt ? data.expiresAt.toDate() : null;
         
-        if (expiry && now > expiry) {
-          setError('The PIN has expired. Please get a new one from Telegram.');
-        } else if (data.value === inputPin) {
+        if (data.value === inputPin) {
           onAuthorized();
         } else {
           setError('Invalid PIN. Please check our Telegram channel.');
@@ -708,15 +706,7 @@ export default function App() {
         // Check authorization status by identifier (Source of truth)
         const authSnap = await getDoc(doc(db, 'authorized_ips', identifier));
         if (authSnap.exists()) {
-          const authData = authSnap.data();
-          const now = new Date();
-          const expiry = authData.expiresAt ? authData.expiresAt.toDate() : null;
-          
-          if (expiry && now > expiry) {
-            setIsAuthorized(true);
-          } else {
-            setIsAuthorized(false);
-          }
+          setIsAuthorized(true);
         } else {
           setIsAuthorized(false);
         }
@@ -769,15 +759,9 @@ export default function App() {
   const handleAuthorized = async () => {
     if (!userIp) return;
     
-    // Set expiry to next 7 AM (matching the PIN logic)
-    let expiry = new Date();
-    expiry.setHours(7, 0, 0, 0);
-    if (new Date() > expiry) expiry.setDate(expiry.getDate() + 1);
-    
     try {
       await setDoc(doc(db, 'authorized_ips', userIp), { 
         authorized: true, 
-        expiresAt: expiry,
         updatedAt: serverTimestamp() 
       });
       setIsAuthorized(true);
