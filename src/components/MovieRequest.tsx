@@ -98,67 +98,69 @@ export default function MovieRequest({ onClose, userIp }: MovieRequestProps) {
   }
 
   return (
-    <div className="min-h-screen bg-black pt-12 pb-20 px-4 md:px-12">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-black pt-20 sm:pt-24 pb-20 px-4 md:px-12">
+      <div className="max-w-xl mx-auto">
         <button 
           onClick={onClose}
-          className="mb-4 flex items-center gap-2 text-zinc-500 hover:text-white transition-colors group"
+          className="mb-6 flex items-center gap-2 text-zinc-600 hover:text-white transition-colors group"
         >
-          <div className="p-2 bg-white/5 rounded-full group-hover:bg-red-600 transition-all">
-            <ChevronLeft size={20} />
+          <div className="p-1.5 bg-white/5 rounded-full group-hover:bg-red-600 transition-all border border-white/5">
+            <ChevronLeft size={16} />
           </div>
-          <span className="font-black uppercase tracking-widest text-xs">Back to Home</span>
+          <span className="font-black uppercase tracking-[0.3em] text-[9px]">Return to Cinema</span>
         </button>
 
-        <div className="bg-zinc-900/50 backdrop-blur-xl border border-white/10 p-8 md:p-12 rounded-[3rem] shadow-2xl">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl md:text-6xl font-black tracking-tighter italic uppercase mb-4">
-              <span className="bg-gradient-to-r from-purple-400 via-cyan-400 to-emerald-400 bg-clip-text text-transparent drop-shadow-[0_0_30px_rgba(34,211,238,0.3)]">
-                BHARAT PRIME Movie Request
-              </span>
+        <motion.div 
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="bg-zinc-900/40 backdrop-blur-3xl border border-white/5 p-8 sm:p-10 rounded-[2.5rem] shadow-[0_0_80px_rgba(0,0,0,0.8)] relative z-10 ring-1 ring-white/5"
+        >
+          <div className="text-center mb-8 sm:mb-10">
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tighter italic uppercase mb-2 bg-gradient-to-r from-white to-zinc-500 bg-clip-text text-transparent">
+              Movie Request
             </h1>
-            <p className="text-zinc-400 text-lg font-medium">Request your favorite movies and we'll add them!</p>
+            <p className="text-zinc-600 text-[10px] font-black uppercase tracking-[0.4em] opacity-80">Tell us what's missing</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-              <div className="space-y-3">
-                <label className="text-sm font-black text-zinc-300 uppercase tracking-widest ml-1">Name Movie/Series:</label>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div className="space-y-2">
+                <label className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.4em] ml-1">Content Title</label>
                 <input 
                   required
                   type="text" 
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Enter name.."
-                  className="w-full bg-zinc-800/50 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-cyan-500 outline-none transition-all placeholder:text-zinc-600 font-medium"
+                  placeholder="e.g. Inception"
+                  className="w-full bg-black/40 border border-white/5 rounded-xl py-3.5 px-6 text-sm font-black focus:border-red-600 focus:bg-black/60 outline-none transition-all placeholder:text-zinc-800 text-white"
                 />
               </div>
 
-              <div className="space-y-3">
-                <label className="text-sm font-black text-zinc-300 uppercase tracking-widest ml-1">Release Year:</label>
+              <div className="space-y-2">
+                <label className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.4em] ml-1">Launch Year</label>
                 <input 
                   type="text" 
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
-                  placeholder="Ex: 2025"
-                  className="w-full bg-zinc-800/50 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-cyan-500 outline-none transition-all placeholder:text-zinc-600 font-medium"
+                  placeholder="e.g. 2010"
+                  className="w-full bg-black/40 border border-white/5 rounded-xl py-3.5 px-6 text-sm font-black focus:border-red-600 focus:bg-black/60 outline-none transition-all placeholder:text-zinc-800 text-white"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-              <div className="space-y-4">
-                <label className="text-sm font-black text-zinc-300 uppercase tracking-widest ml-1">Type:</label>
-                <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div className="space-y-3">
+                <label className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.4em] ml-1">Category Type</label>
+                <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
                   {(['Movie', 'Series'] as const).map((t) => (
                     <button
                       key={t}
                       type="button"
                       onClick={() => setType(t)}
-                      className={`py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all border ${
+                      className={`flex-1 py-2.5 rounded-lg font-black uppercase tracking-widest text-[9px] transition-all ${
                         type === t 
-                          ? 'bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 text-white border-transparent shadow-lg shadow-purple-500/20' 
-                          : 'bg-zinc-800/50 text-zinc-500 border-white/5 hover:border-white/20'
+                          ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' 
+                          : 'text-zinc-600 hover:text-zinc-400'
                       }`}
                     >
                       {t === 'Series' ? 'Web Series' : t}
@@ -167,15 +169,15 @@ export default function MovieRequest({ onClose, userIp }: MovieRequestProps) {
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <label className="text-sm font-black text-zinc-300 uppercase tracking-widest ml-1">Language:</label>
+              <div className="space-y-2">
+                <label className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.4em] ml-1">Language Choice</label>
                 <div className="relative">
                   <select 
                     value={language}
                     onChange={(e) => setLanguage(e.target.value)}
-                    className="w-full bg-zinc-800/50 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-cyan-500 outline-none transition-all appearance-none font-medium"
+                    className="w-full bg-black/40 border border-white/5 rounded-xl py-3.5 px-6 text-sm font-black focus:border-red-600 focus:bg-black/60 outline-none transition-all appearance-none text-white cursor-pointer"
                   >
-                    <option value="" className="bg-zinc-900">Select language</option>
+                    <option value="" className="bg-zinc-900">Select...</option>
                     <option value="Hindi" className="bg-zinc-900">Hindi</option>
                     <option value="English" className="bg-zinc-900">English</option>
                     <option value="Kannada" className="bg-zinc-900">Kannada</option>
@@ -184,43 +186,42 @@ export default function MovieRequest({ onClose, userIp }: MovieRequestProps) {
                     <option value="Malayalam" className="bg-zinc-900">Malayalam</option>
                     <option value="Other" className="bg-zinc-900">Other</option>
                   </select>
-                  <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
-                    <ChevronLeft size={20} className="-rotate-90" />
+                  <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-600">
+                    <ChevronLeft size={14} className="-rotate-90" />
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <label className="text-sm font-black text-zinc-300 uppercase tracking-widest ml-1">Notes:</label>
+            <div className="space-y-2">
+              <label className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.4em] ml-1">Additional Details</label>
               <textarea 
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Any special requests"
-                rows={3}
-                className="w-full bg-zinc-800/50 border border-white/10 rounded-2xl py-4 px-6 text-white focus:border-cyan-500 outline-none transition-all placeholder:text-zinc-600 font-medium resize-none"
+                placeholder="Any special requests or details..."
+                rows={2}
+                className="w-full bg-black/40 border border-white/5 rounded-xl py-4 px-6 text-sm font-black focus:border-red-600 focus:bg-black/60 outline-none transition-all placeholder:text-zinc-800 text-white resize-none"
               />
             </div>
 
-            <button 
+            <motion.button 
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
               type="submit"
               disabled={isSubmitting}
-              className="w-full bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-400 hover:scale-[1.02] active:scale-[0.98] text-white font-black py-5 rounded-2xl transition-all shadow-2xl shadow-purple-500/20 uppercase tracking-[0.2em] flex items-center justify-center gap-3 relative overflow-hidden group"
+              className="w-full bg-red-600 hover:bg-red-700 disabled:bg-red-900 text-white font-black py-4.5 rounded-xl transition-all shadow-[0_5px_30px_rgba(229,9,20,0.3)] uppercase tracking-[0.4em] flex items-center justify-center gap-3 mt-4 text-[11px]"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative flex items-center gap-3">
-                {isSubmitting ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <Send size={20} className="fill-current" />
-                    Send Request
-                  </>
-                )}
-              </div>
-            </button>
+              {isSubmitting ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Send size={16} className="fill-current" />
+                  Dispatch Request
+                </>
+              )}
+            </motion.button>
           </form>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

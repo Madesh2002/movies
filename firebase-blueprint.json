@@ -1,5 +1,21 @@
 {
   "entities": {
+    "user": {
+      "title": "User Account",
+      "description": "A user's subscription and account details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Unique identifier for the user" },
+        "password": { "type": "string", "description": "Login password" },
+        "planName": { "type": "string", "description": "Name of the subscription plan" },
+        "planPrice": { "type": "string", "description": "Price of the plan" },
+        "expiryDate": { "type": "string", "format": "date", "description": "When the plan expires" },
+        "features": { "type": "array", "items": { "type": "string" }, "description": "Features included in the plan" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "password", "planName"]
+    },
     "movieRequest": {
       "title": "Movie Request",
       "description": "A request for a movie or series from a user",
@@ -48,6 +64,10 @@
     "/movieRequests/{requestId}": {
       "schema": "movieRequest",
       "description": "Collection of movie requests"
+    },
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "Collection of user identities and subscription plans"
     }
   }
 }

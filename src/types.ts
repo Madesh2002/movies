@@ -16,3 +16,17 @@ export interface Movie {
 }
 
 export type Category = 'Kannada' | 'Telugu' | 'Tamil' | 'Hindi';
+
+export interface User {
+  userId: string;
+  password?: string;
+  name?: string;
+  planName?: string;
+  planPrice?: string;
+  startDate?: string;
+  expiryDate?: string;
+  trxId?: string;
+  features?: string[];
+  createdAt?: any;
+  updatedAt?: any;
+}

@@ -49,7 +49,7 @@ export default function QualitySelector({ movie, onClose, onSelect }: QualitySel
           onClick={(e) => e.stopPropagation()}
         >
           <div className="relative aspect-video w-full">
-            <img src={movie.image || movie.thumbnail} alt={movie.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            <img src={movie.image || movie.thumbnail || undefined} alt={movie.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] to-transparent" />
             <div className="absolute bottom-4 left-6 right-6">
               <h2 className="text-2xl font-black text-white tracking-tighter uppercase italic">{movie.title}</h2>

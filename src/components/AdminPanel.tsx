@@ -4,30 +4,35 @@ import {
   onSnapshot, query, orderBy, serverTimestamp, setDoc, getDoc, limit, getDocs, writeBatch 
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Movie } from '../types';
+import { Movie, User } from '../types';
 import { 
   LayoutGrid, PlusCircle, ShieldCheck, Search, Pencil, Trash2, X, 
   Menu, Play, Trash, Check, Globe, Calendar, FileText,
-  Clapperboard, ListVideo, AlertTriangle
+  Clapperboard, ListVideo, AlertTriangle, BrainCircuit, TrendingDown, TrendingUp, Scan
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast, ToastContainer } from 'react-toastify';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import Tesseract from 'tesseract.js';
 import 'react-toastify/dist/ReactToastify.css';
 
-type ViewType = 'dashboard' | 'upload' | 'security' | 'requests';
+type ViewType = 'dashboard' | 'upload' | 'users' | 'requests' | 'security';
 
 export default function AdminPanel({ 
   onClose, 
   userIp, 
-  onAuthorized 
+  onAuthorized,
+  onLogoutAll
 }: { 
   onClose: () => void;
   userIp: string;
   onAuthorized: () => void;
+  onLogoutAll: () => void;
 }) {
   const [activeView, setActiveView] = useState<ViewType>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [userEditId, setUserEditId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<'All' | 'Movie' | 'Series' | 'Banner'>('All');
   const [formData, setFormData] = useState({
     title: '',
@@ -38,10 +43,39 @@ export default function AdminPanel({
     language: 'Kannada',
     links: [{ label: '720p', url: '' }]
   });
+
+  const [userFormData, setUserFormData] = useState({
+    userId: '',
+    password: '',
+    name: '',
+    planName: 'Weekly (19 RS)',
+    planPrice: '₹19',
+    startDate: new Date().toISOString().split('T')[0],
+    expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    trxId: '',
+    features: ['HD', 'Unlimited Movies']
+  });
+  const [isRenewalMode, setIsRenewalMode] = useState(false);
+
   const [movies, setMovies] = useState<Movie[]>([]);
   const [movieRequests, setMovieRequests] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUserSubmitting, setIsUserSubmitting] = useState(false);
+  const [isOcrLoading, setIsOcrLoading] = useState(false);
+
+  // Financial Stats State
+  const [financeStats, setFinanceStats] = useState({
+    revenue: 0,
+    expenses: 1500, // Monthly Operating Cost
+    breakdown: [
+      { name: '90-Days', value: 0, color: '#2ecc71' },
+      { name: 'Monthly', value: 0, color: '#2ecc71' },
+      { name: 'Weekly', value: 0, color: '#2ecc71' },
+      { name: 'Cost', value: -1500, color: '#e50914' }
+    ]
+  });
 
   // Security State
   const [pin, setPin] = useState('');
@@ -66,6 +100,98 @@ export default function AdminPanel({
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(list);
+      calculateFinance(list);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const calculateFinance = (userList: any[]) => {
+    let rev = 0;
+    let p90 = 0;
+    let pMonth = 0;
+    let pWeek = 0;
+    const expenses = 1500;
+
+    userList.forEach(u => {
+      const amtPaid = parseFloat(u.amount || u.planPrice?.replace(/[^0-9.]/g, '') || '0');
+      const plan = (u.planName || u.plan || "").toLowerCase();
+      
+      // Strict matching logic from template
+      const isMatched = (plan.includes("149") && amtPaid === 149) || 
+                        (plan.includes("55") && amtPaid === 55) || 
+                        (plan.includes("19") && amtPaid === 19);
+
+      if (isMatched) {
+        if (plan.includes('90')) p90 += amtPaid;
+        else if (plan.includes('monthly') || plan.includes('55')) pMonth += amtPaid;
+        else pWeek += amtPaid;
+        rev += amtPaid;
+      }
+    });
+
+    setFinanceStats({
+      revenue: rev,
+      expenses,
+      breakdown: [
+        { name: 'Matched Rev', value: rev, color: '#2ecc71' },
+        { name: 'Fixed Costs', value: -expenses, color: '#e50914' }
+      ]
+    });
+  };
+
+  const handleOcrScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsOcrLoading(true);
+    try {
+      const result = await Tesseract.recognize(file, 'eng');
+      const text = result.data.text;
+      
+      // Basic extraction logic matching the template
+      const trxMatch = text.match(/(?:Txn|ID|Ref|UPI)[:\s]*([A-Z0-9]+)/i) || text.match(/[0-9]{12}/);
+      const amtMatch = text.match(/(?:RS|Rs|INR|Total|Paid)[:\s]*([0-9,.]+)/i);
+
+      if (amtMatch) {
+        const val = parseFloat(amtMatch[1].replace(/,/g, ''));
+        let plan = 'Basic';
+        let expiry = '';
+        const today = new Date();
+        
+        if (val >= 149) {
+          plan = 'Ultimate';
+          today.setDate(today.getDate() + 90);
+        } else if (val >= 55) {
+          plan = 'Premium';
+          today.setDate(today.getDate() + 30);
+        } else {
+          plan = 'Basic';
+          today.setDate(today.getDate() + 7);
+        }
+        
+        expiry = today.toISOString().split('T')[0];
+        
+        setUserFormData(prev => ({
+          ...prev,
+          planPrice: `₹${val}`,
+          planName: plan,
+          expiryDate: expiry
+        }));
+      }
+
+      toast.info("Receipt Scanned Successfully");
+    } catch (error) {
+      toast.error("OCR Failed: Could not process image");
+    } finally {
+      setIsOcrLoading(false);
+    }
+  };
 
   useEffect(() => {
     checkPassStatus();
@@ -141,24 +267,84 @@ export default function AdminPanel({
     }
   };
 
-  const handleClearAllSessions = async () => {
-    if (!window.confirm("This will log out ALL users immediately. Continue?")) return;
+  const handleUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userFormData.userId || !userFormData.password) {
+      toast.error("User ID and Password are required");
+      return;
+    }
+
+    setIsUserSubmitting(true);
     try {
-      const sessionsRef = collection(db, "authorized_ips");
-      const qSnap = await getDocs(sessionsRef);
-      const batch = writeBatch(db);
-      qSnap.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-      
-      // Also clear local storage for the admin
-      localStorage.removeItem('bharat_prime_authorized');
-      localStorage.removeItem('bharat_prime_expiry');
-      
-      toast.success("All user sessions cleared!");
-      // Re-authorize admin if they were already authorized
-      if (onAuthorized) onAuthorized();
+      const dataToSave = {
+        userId: userFormData.userId.trim(),
+        password: userFormData.password.trim(),
+        name: userFormData.name.trim(),
+        planName: userFormData.planName,
+        planPrice: userFormData.planPrice,
+        startDate: userFormData.startDate,
+        expiryDate: userFormData.expiryDate,
+        trxId: userFormData.trxId.trim(),
+        features: userFormData.features.split(',').map(f => f.trim()).filter(f => f),
+        updatedAt: serverTimestamp()
+      };
+
+      if (userEditId) {
+        await updateDoc(doc(db, "users", userEditId), dataToSave);
+        toast.success("User Updated");
+      } else {
+        await setDoc(doc(db, "users", userFormData.userId.trim()), {
+          ...dataToSave,
+          createdAt: serverTimestamp()
+        });
+        toast.success("User Created");
+      }
+      resetUserForm();
     } catch (error: any) {
-      toast.error("Failed to clear sessions: " + error.message);
+      toast.error(error.message);
+    } finally {
+      setIsUserSubmitting(false);
+    }
+  };
+
+  const prepareUserEdit = (user: any) => {
+    setUserEditId(user.id);
+    setUserFormData({
+      userId: user.userId || '',
+      password: user.password || '',
+      name: user.name || '',
+      planName: user.planName || 'Weekly (19 RS)',
+      planPrice: user.planPrice || '₹19',
+      startDate: user.startDate || new Date().toISOString().split('T')[0],
+      expiryDate: user.expiryDate || '',
+      trxId: user.trxId || '',
+      features: Array.isArray(user.features) ? user.features.join(', ') : ''
+    });
+  };
+
+  const resetUserForm = () => {
+    setUserEditId(null);
+    setUserFormData({
+      userId: '',
+      password: '',
+      name: '',
+      planName: 'Weekly (19 RS)',
+      planPrice: '₹19',
+      startDate: new Date().toISOString().split('T')[0],
+      expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      trxId: '',
+      features: 'HD, Unlimited Movies'
+    });
+  };
+
+  const handleUserDelete = async (id: string) => {
+    if (window.confirm("Delete this user?")) {
+      try {
+        await deleteDoc(doc(db, "users", id));
+        toast.info("User Deleted");
+      } catch (error: any) {
+        toast.error(error.message);
+      }
     }
   };
 
@@ -298,12 +484,28 @@ export default function AdminPanel({
     return matchesSearch && matchesFilter;
   });
 
+  useEffect(() => {
+    // Auto Cleanup logic
+    const today = new Date().toISOString().split('T')[0];
+    const expiredUsers = users.filter(u => u.expiryDate && u.expiryDate < today);
+    if (expiredUsers.length > 0) {
+      expiredUsers.forEach(async (u) => {
+        try {
+          await deleteDoc(doc(db, "users", u.userId));
+        } catch (error) {
+          console.error("Error auto-cleaning user:", u.userId, error);
+        }
+      });
+    }
+  }, [users]);
+
   const stats = {
     total: movies.length,
     movies: movies.filter(m => m.category === 'Movie').length,
     series: movies.filter(m => m.category === 'Series').length,
     banners: movies.filter(m => m.category === 'Banner').length,
-    pendingRequests: movieRequests.filter(r => r.status === 'pending').length
+    pendingRequests: movieRequests.filter(r => r.status === 'pending').length,
+    totalUsers: users.length
   };
 
   return (
@@ -312,54 +514,54 @@ export default function AdminPanel({
       
       {/* Sidebar */}
       <aside className={`bg-[#111] border-r border-[#222] transition-all duration-300 flex flex-col z-[510] ${isSidebarCollapsed ? 'w-0 -translate-x-full md:w-20 md:translate-x-0' : 'w-full md:w-[280px]'}`}>
-        <div className="p-6 h-20 border-b border-[#222] flex items-center justify-between">
-          {!isSidebarCollapsed && <span className="text-[#e50914] font-black text-xl tracking-wider">BHARAT PRIME</span>}
+        <div className="p-4 h-16 border-b border-[#222] flex items-center justify-between">
+          {!isSidebarCollapsed && <span className="text-[#e50914] font-black text-sm tracking-widest italic">BHARAT PRIME | ELITE</span>}
           <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-2 hover:bg-white/5 rounded-lg md:hidden">
-            <X size={24} />
+            <X size={20} />
           </button>
         </div>
         
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-3 space-y-1">
           <button 
             onClick={() => { setActiveView('dashboard'); if(window.innerWidth < 768) setIsSidebarCollapsed(true); }}
-            className={`w-full flex items-center gap-3 p-4 rounded-xl transition-all font-medium text-sm ${activeView === 'dashboard' ? 'bg-[#1f1f1f] text-white border-l-4 border-[#e50914]' : 'text-[#aaa] hover:bg-[#1f1f1f] hover:text-white'}`}
+            className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all font-black text-[9px] uppercase tracking-widest ${activeView === 'dashboard' ? 'bg-[#1f1f1f] text-white border-l-2 border-[#e50914]' : 'text-[#555] hover:bg-[#1f1f1f] hover:text-white'}`}
           >
-            <LayoutGrid size={20} />
+            <LayoutGrid size={16} />
             {!isSidebarCollapsed && <span>Dashboard</span>}
           </button>
           <button 
             onClick={() => { setActiveView('upload'); if(window.innerWidth < 768) setIsSidebarCollapsed(true); }}
-            className={`w-full flex items-center gap-3 p-4 rounded-xl transition-all font-medium text-sm ${activeView === 'upload' ? 'bg-[#1f1f1f] text-white border-l-4 border-[#e50914]' : 'text-[#aaa] hover:bg-[#1f1f1f] hover:text-white'}`}
+            className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all font-black text-[9px] uppercase tracking-widest ${activeView === 'upload' ? 'bg-[#1f1f1f] text-white border-l-2 border-[#e50914]' : 'text-[#555] hover:bg-[#1f1f1f] hover:text-white'}`}
           >
-            <PlusCircle size={20} />
+            <PlusCircle size={16} />
             {!isSidebarCollapsed && <span>Add Content</span>}
           </button>
           <button 
+            onClick={() => { setActiveView('users'); if(window.innerWidth < 768) setIsSidebarCollapsed(true); }}
+            className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all font-black text-[9px] uppercase tracking-widest ${activeView === 'users' ? 'bg-[#1f1f1f] text-white border-l-2 border-[#e50914]' : 'text-[#555] hover:bg-[#1f1f1f] hover:text-white'}`}
+          >
+            <ShieldCheck size={16} />
+            {!isSidebarCollapsed && <span>Members</span>}
+          </button>
+          <button 
             onClick={() => { setActiveView('requests'); if(window.innerWidth < 768) setIsSidebarCollapsed(true); }}
-            className={`w-full flex items-center justify-between p-4 rounded-xl transition-all font-medium text-sm ${activeView === 'requests' ? 'bg-[#1f1f1f] text-white border-l-4 border-[#e50914]' : 'text-[#aaa] hover:bg-[#1f1f1f] hover:text-white'}`}
+            className={`w-full flex items-center justify-between p-3 rounded-lg transition-all font-black text-[9px] uppercase tracking-widest ${activeView === 'requests' ? 'bg-[#1f1f1f] text-white border-l-2 border-[#e50914]' : 'text-[#555] hover:bg-[#1f1f1f] hover:text-white'}`}
           >
             <div className="flex items-center gap-3">
-              <ListVideo size={20} />
+              <FileText size={16} />
               {!isSidebarCollapsed && <span>User Requests</span>}
             </div>
             {!isSidebarCollapsed && stats.pendingRequests > 0 && (
-              <span className="bg-[#e50914] text-white text-[10px] px-2 py-0.5 rounded-full font-black">
+              <span className="bg-[#e50914] text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">
                 {stats.pendingRequests}
               </span>
             )}
           </button>
-          <button 
-            onClick={() => { setActiveView('security'); if(window.innerWidth < 768) setIsSidebarCollapsed(true); }}
-            className={`w-full flex items-center gap-3 p-4 rounded-xl transition-all font-medium text-sm ${activeView === 'security' ? 'bg-[#1f1f1f] text-white border-l-4 border-[#e50914]' : 'text-[#aaa] hover:bg-[#1f1f1f] hover:text-white'}`}
-          >
-            <ShieldCheck size={20} />
-            {!isSidebarCollapsed && <span>Security Settings</span>}
-          </button>
         </nav>
 
-        <div className="p-4 border-t border-[#222]">
-          <button onClick={onClose} className="w-full flex items-center gap-3 p-4 rounded-xl text-[#aaa] hover:bg-red-600/10 hover:text-red-500 transition-all font-medium text-sm">
-            <X size={20} />
+        <div className="p-3 border-t border-[#222]">
+          <button onClick={onClose} className="w-full flex items-center gap-3 p-3 rounded-lg text-[#444] hover:bg-red-600/10 hover:text-red-500 transition-all font-black text-[9px] uppercase tracking-widest">
+            <X size={16} />
             {!isSidebarCollapsed && <span>Close Admin</span>}
           </button>
         </div>
@@ -399,25 +601,30 @@ export default function AdminPanel({
           {/* Header */}
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
             <div className="flex items-center gap-4">
-              <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-2 bg-[#1a1a1a] rounded-lg md:hidden">
-                <Menu size={24} />
+              <button 
+                onClick={() => setIsSidebarCollapsed(false)} 
+                className="p-3 bg-[#1a1a1a] border border-[#222] rounded-xl md:hidden text-white hover:bg-red-600/10 transition-all"
+              >
+                <Menu size={20} />
               </button>
               <div>
-                <h5 className="text-[#888] text-xs font-black uppercase tracking-[0.2em] mb-1">Control Center</h5>
+                <h5 className="text-[#888] text-[10px] font-black uppercase tracking-[0.3em] mb-1">Control Center</h5>
                 <h2 className="text-2xl font-black uppercase italic tracking-tighter">
-                  {activeView === 'dashboard' ? 'System Overview' : activeView === 'upload' ? 'Content Publisher' : 'Security Protocol'}
+                  {activeView === 'dashboard' ? 'Overview' : activeView === 'upload' ? 'Publish Content' : activeView === 'users' ? 'Member Access' : 'Inbound Requests'}
                 </h2>
               </div>
             </div>
             
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#555]" size={18} />
+            <div className="relative w-full md:w-96 group">
+              <i className="absolute left-5 top-1/2 -translate-y-1/2 text-[#555] group-focus-within:text-[#e50914] transition-colors">
+                <Search size={18} />
+              </i>
               <input 
                 type="text" 
-                placeholder="Search data..."
+                placeholder="Search across all database..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full bg-[#1a1a1a] border border-[#222] rounded-xl py-3 pl-12 pr-4 focus:border-[#e50914] outline-none transition-all text-sm"
+                className="w-full bg-[#111] border border-[#222] rounded-2xl py-4 pl-14 pr-6 focus:border-[#e50914] focus:bg-[#1a1a1a] outline-none transition-all text-sm font-bold shadow-2xl"
               />
             </div>
           </header>
@@ -431,31 +638,109 @@ export default function AdminPanel({
                 exit={{ opacity: 0, y: -20 }}
                 className="space-y-10"
               >
-                <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-[#222] p-8 md:p-12 rounded-[2rem] relative overflow-hidden">
+                <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-[#222] p-8 rounded-[1.5rem] relative overflow-hidden shadow-2xl">
                   <div className="relative z-10">
-                    <h1 className="text-3xl md:text-5xl font-black mb-4 tracking-tighter">Welcome Back, Admin</h1>
-                    <p className="text-[#888] font-medium">Security: Permanent Master PIN active.</p>
+                    <h1 className="text-3xl font-black mb-1 uppercase tracking-tighter italic drop-shadow-2xl">Elite Control</h1>
+                    <p className="text-[#444] font-black text-[9px] uppercase tracking-[0.4em] mb-10">System Management & Financial Logic.</p>
                     
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-10">
-                      <div className="bg-[#111] border border-[#222] p-6 rounded-2xl hover:border-[#e50914]/30 transition-colors group">
-                        <h3 className="text-3xl font-black mb-1 group-hover:text-[#e50914] transition-colors">{stats.total}</h3>
-                        <span className="text-[10px] font-black text-[#555] uppercase tracking-widest">TOTAL ASSETS</span>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-black/40 backdrop-blur-xl border border-white/5 p-6 rounded-2xl hover:border-white/10 transition-all group shadow-2xl">
+                        <h3 className="text-2xl font-black mb-1 group-hover:text-white transition-colors">{stats.total}</h3>
+                        <span className="text-[8px] font-black text-[#444] uppercase tracking-[0.3em] group-hover:text-[#666]">TOTAL ASSETS</span>
                       </div>
-                      <div className="bg-[#111] border border-[#222] p-6 rounded-2xl hover:border-yellow-500/30 transition-colors group">
-                        <h3 className="text-3xl font-black mb-1 text-yellow-500">{stats.pendingRequests}</h3>
-                        <span className="text-[10px] font-black text-[#555] uppercase tracking-widest">PENDING REQS</span>
+                      <div className="bg-black/40 backdrop-blur-xl border border-white/5 p-6 rounded-2xl hover:border-green-600/30 transition-all group shadow-2xl">
+                        <h3 className="text-2xl font-black mb-1 text-green-500">{stats.totalUsers}</h3>
+                        <span className="text-[8px] font-black text-[#444] uppercase tracking-[0.3em] group-hover:text-[#666]">ACTIVE MEMBERS</span>
                       </div>
-                      <div className="bg-[#111] border border-[#222] p-6 rounded-2xl hover:border-red-500/30 transition-colors group">
-                        <h3 className="text-3xl font-black mb-1 text-red-600">{stats.movies}</h3>
-                        <span className="text-[10px] font-black text-[#555] uppercase tracking-widest">MOVIES</span>
+                      <div className="bg-black/40 backdrop-blur-xl border border-white/5 p-6 rounded-2xl hover:border-yellow-500/30 transition-all group shadow-2xl">
+                        <h3 className="text-2xl font-black mb-1 text-yellow-500">{stats.pendingRequests}</h3>
+                        <span className="text-[8px] font-black text-[#444] uppercase tracking-[0.3em] group-hover:text-[#666]">PENDING REQS</span>
                       </div>
-                      <div className="bg-[#111] border border-[#222] p-6 rounded-2xl hover:border-blue-500/30 transition-colors group">
-                        <h3 className="text-3xl font-black mb-1 text-blue-500">{stats.series}</h3>
-                        <span className="text-[10px] font-black text-[#555] uppercase tracking-widest">SERIES</span>
+                      <div className="bg-black/40 backdrop-blur-xl border border-white/5 p-6 rounded-2xl hover:border-red-600/30 transition-all group shadow-2xl">
+                        <h3 className="text-2xl font-black mb-1 text-[#e50914]">{stats.movies}</h3>
+                        <span className="text-[8px] font-black text-[#444] uppercase tracking-[0.3em] group-hover:text-[#666]">MOVIE ASSETS</span>
                       </div>
                     </div>
                   </div>
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-[#e50914]/5 blur-[100px] rounded-full -translate-y-1/2 translate-x-1/2" />
+                  <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-[#e50914]/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2" />
+                </div>
+
+                <div className="bg-[#111] border border-[#222] p-8 md:p-10 rounded-[2rem] shadow-2xl">
+                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-6 mb-10">
+                    <div>
+                      <h4 className="text-xl font-black uppercase italic tracking-tighter">Financial Analytics</h4>
+                      <p className="text-[10px] font-black text-[#555] uppercase tracking-widest mt-1">Real-time revenue matching logic</p>
+                    </div>
+                    <div className="flex items-center gap-8">
+                      <div className="text-right">
+                        <p className="text-[10px] font-black text-[#555] uppercase tracking-widest mb-1">Total Revenue</p>
+                        <h4 className="text-2xl font-black text-green-500">₹{financeStats.revenue}</h4>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-black text-[#555] uppercase tracking-widest mb-1">Total Expenses</p>
+                        <h4 className="text-2xl font-black text-red-600">₹{financeStats.expenses}</h4>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid lg:grid-cols-3 gap-10">
+                    <div className="lg:col-span-2 h-[350px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={financeStats.breakdown}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                          <XAxis 
+                            dataKey="name" 
+                            stroke="#555" 
+                            fontSize={10} 
+                            tickLine={false} 
+                            axisLine={false}
+                            tick={{ fontWeight: 800, textTransform: 'uppercase' }}
+                          />
+                          <YAxis stroke="#555" fontSize={10} tickLine={false} axisLine={false} tick={{ fontWeight: 800 }} />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: '12px' }}
+                            itemStyle={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase' }}
+                            cursor={{ fill: '#ffffff05' }}
+                          />
+                          <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={50}>
+                            {financeStats.breakdown.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    
+                    <div className="space-y-6">
+                      <div className="bg-[#1a1a1a] border-l-4 border-blue-500 p-6 rounded-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                          <BrainCircuit size={20} className="text-blue-500" />
+                          <h6 className="text-[10px] font-black text-blue-500 uppercase tracking-widest">AI Financial Advisor</h6>
+                        </div>
+                        <p className="text-xs text-[#888] font-bold leading-relaxed">
+                          {financeStats.revenue - financeStats.expenses > 0 
+                            ? "Revenue successfully exceeds current operating costs. Scalability is healthy. Consider upgrading server bandwidth for growing user base."
+                            : "System operating at deficit. Focus on membership retention and standardizing Ultimate Plan upgrades to cover ₹1500 monthly costs."}
+                        </p>
+                      </div>
+
+                      <div className={`bg-[#1a1a1a] border border-[#222] p-6 rounded-2xl ${financeStats.revenue - financeStats.expenses > 0 ? 'border-green-600/30' : 'border-red-600/30'}`}>
+                        <div className="flex items-center gap-3 mb-2">
+                          {financeStats.revenue - financeStats.expenses > 0 
+                            ? <TrendingUp size={24} className="text-green-500" />
+                            : <TrendingDown size={24} className="text-red-500" />
+                          }
+                          <h6 className="text-[10px] font-black uppercase tracking-widest text-[#555]">Business Status</h6>
+                        </div>
+                        <h4 className={`text-2xl font-black mb-2 ${financeStats.revenue - financeStats.expenses > 0 ? 'text-green-500' : 'text-red-600'}`}>
+                          {financeStats.revenue - financeStats.expenses > 0 ? 'NET PROFIT' : 'FINANCIAL DEFICIT'}
+                        </h4>
+                        <p className="text-[10px] font-black text-[#444] uppercase tracking-widest">
+                          Matched Balance: {Math.abs(financeStats.revenue - financeStats.expenses)} RS
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -471,7 +756,6 @@ export default function AdminPanel({
                 <h4 className="text-xl font-black mb-8 flex items-center gap-3 italic">
                   <PlusCircle className="text-[#e50914]" /> {editId ? 'UPDATE CONTENT' : 'PUBLISH CONTENT'}
                 </h4>
-                
                 <form onSubmit={handleSubmit} className="space-y-8">
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                     <div className="space-y-2 lg:col-span-2">
@@ -534,22 +818,24 @@ export default function AdminPanel({
                       </select>
                     </div>
 
-                    {formData.category !== 'Banner' && (
-                      <div className="space-y-2 lg:col-span-3">
-                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Language</label>
-                        <select 
-                          value={formData.language}
-                          onChange={e => setFormData({...formData, language: e.target.value})}
-                          className="w-full bg-[#1f1f1f] border border-[#333] rounded-xl py-4 px-5 focus:border-[#e50914] outline-none transition-all text-sm font-medium appearance-none"
-                        >
-                          <option value="Kannada">Kannada</option>
-                          <option value="Telugu">Telugu</option>
-                          <option value="Hindi">Hindi</option>
-                          <option value="Tamil">Tamil</option>
-                          <option value="English">English</option>
-                        </select>
-                      </div>
-                    )}
+                      {formData.category !== 'Banner' && (
+                        <div className="space-y-2 lg:col-span-3">
+                          <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Audio Language</label>
+                          <select 
+                            value={formData.language}
+                            onChange={e => setFormData({...formData, language: e.target.value})}
+                            className="w-full bg-[#111] border border-[#222] rounded-xl py-4 px-5 focus:border-[#e50914] outline-none transition-all text-sm font-bold appearance-none"
+                          >
+                            <option value="Kannada">Kannada</option>
+                            <option value="Tamil">Tamil</option>
+                            <option value="Telugu">Telugu</option>
+                            <option value="Hindi">Hindi</option>
+                            <option value="Malayalam">Malayalam</option>
+                            <option value="English">English</option>
+                            <option value="Multi">Multi-Audio</option>
+                          </select>
+                        </div>
+                      )}
                   </div>
 
                   <div className="space-y-4">
@@ -612,75 +898,348 @@ export default function AdminPanel({
               </motion.div>
             )}
 
+            {activeView === 'users' && (
+              <motion.div 
+                key="users"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-10"
+              >
+                {/* User Form */}
+                <div className="bg-[#141414] border border-[#222] p-8 rounded-[2rem] shadow-2xl">
+                  <div className="flex justify-between items-center mb-8">
+                    <h4 className="text-xl font-black flex items-center gap-3 italic text-purple-500 tracking-tighter">
+                      <ShieldCheck /> {userEditId ? 'UPDATE USER ACCOUNT' : 'MEMBER REGISTRATION'}
+                    </h4>
+                    {!userEditId && (
+                      <button 
+                        type="button"
+                        onClick={() => setUserFormData({...userFormData, password: Math.random().toString(36).slice(-8).toUpperCase()})}
+                        className="text-[10px] font-black text-[#888] hover:text-white uppercase tracking-widest transition-colors flex items-center gap-2"
+                      >
+                        <PlusCircle size={14} /> Auto-Generate Pass
+                      </button>
+                    )}
+                  </div>
+                  
+                  <form onSubmit={handleUserSubmit} className="space-y-8">
+                    <div className="grid md:grid-cols-3 gap-8">
+                      {!userEditId && (
+                        <div className="md:col-span-1">
+                          <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1 mb-2 block">Scan Payment Receipt (OCR)</label>
+                          <div className="relative">
+                            <input 
+                              type="file" 
+                              accept="image/*"
+                              onChange={handleOcrScan}
+                              className="hidden" 
+                              id="receipt-upload"
+                            />
+                            <label 
+                              htmlFor="receipt-upload"
+                              className="w-full flex items-center justify-center gap-3 p-5 border-2 border-dashed border-[#333] hover:border-blue-500/50 rounded-2xl cursor-pointer transition-all bg-[#1a1a1a]/50 group h-[120px]"
+                            >
+                              {isOcrLoading ? (
+                                <div className="flex flex-col items-center gap-1 text-blue-500 animate-pulse">
+                                  <Scan size={20} className="animate-spin" />
+                                  <span className="text-[9px] font-black uppercase tracking-widest">SCANNING...</span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center gap-1">
+                                  <Scan size={20} className="text-[#444] group-hover:text-blue-500 transition-colors" />
+                                  <span className="text-[9px] font-black text-[#444] group-hover:text-white transition-colors uppercase tracking-widest text-center px-4">UPLOAD RECEIPT</span>
+                                </div>
+                              )}
+                            </label>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Transaction ID</label>
+                        <input 
+                          type="text" 
+                          value={userFormData.trxId}
+                          onChange={e => setUserFormData({...userFormData, trxId: e.target.value})}
+                          className="w-full bg-[#111] border border-[#222] rounded-xl py-4 px-5 focus:border-blue-500 outline-none transition-all text-sm font-bold h-[120px]"
+                          placeholder="EX: BP_99..."
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Amount Paid</label>
+                        <input 
+                          type="number" 
+                          value={userFormData.planPrice.replace(/[^0-9]/g, '')}
+                          onChange={e => {
+                            const val = e.target.value;
+                            let plan = 'Weekly (19 RS)';
+                            if(val === '149') plan = '90 Days (149 RS)';
+                            else if(val === '55') plan = 'Monthly (55 RS)';
+                            
+                            setUserFormData({...userFormData, planPrice: `₹${val}`, planName: plan});
+                          }}
+                          className="w-full bg-[#111] border border-[#222] rounded-xl py-4 px-5 focus:border-blue-500 outline-none transition-all text-sm font-bold h-[120px]"
+                          placeholder="149"
+                        />
+                      </div>
+
+                      {/* Credentials Row */}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">User ID</label>
+                        <input 
+                          type="text" 
+                          value={userFormData.userId}
+                          onChange={e => {
+                            const id = e.target.value;
+                            setUserFormData({...userFormData, userId: id});
+                            const existingUser = users.find(u => u.userId === id);
+                            if (existingUser) {
+                              setIsRenewalMode(true);
+                              setUserFormData({
+                                ...userFormData,
+                                userId: id,
+                                name: existingUser.name || '',
+                                password: existingUser.password || '',
+                                startDate: new Date().toISOString().split('T')[0]
+                              });
+                            } else {
+                              setIsRenewalMode(false);
+                            }
+                          }}
+                          className={`w-full bg-[#111] border ${isRenewalMode ? 'border-blue-500' : 'border-[#222]'} rounded-xl py-4 px-5 focus:border-blue-500 outline-none transition-all text-sm font-bold`}
+                          placeholder="bp_user_123"
+                          disabled={!!userEditId}
+                        />
+                        {isRenewalMode && (
+                          <div className="text-[9px] font-black text-blue-500 uppercase tracking-widest mt-2 animate-pulse flex items-center gap-1">
+                            <ShieldCheck size={12} /> ⚡ Existing User detected: Renewal Mode
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Full Name</label>
+                        <input 
+                          type="text" 
+                          value={userFormData.name}
+                          onChange={e => setUserFormData({...userFormData, name: e.target.value})}
+                          className="w-full bg-[#111] border border-[#222] rounded-xl py-4 px-5 focus:border-blue-500 outline-none transition-all text-sm font-bold"
+                          placeholder="MEMBER NAME"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Password</label>
+                        <input 
+                          type="text" 
+                          value={userFormData.password}
+                          onChange={e => setUserFormData({...userFormData, password: e.target.value})}
+                          className="w-full bg-[#111] border border-[#222] rounded-xl py-4 px-5 focus:border-blue-500 outline-none transition-all text-sm font-bold"
+                          placeholder="GENERATED"
+                        />
+                      </div>
+
+                      {/* Plan Logic */}
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Subscription Plan</label>
+                        <select 
+                          value={userFormData.planName}
+                          onChange={e => {
+                            const val = e.target.value;
+                            let price = '₹19';
+                            let days = 7;
+                            if (val === 'Monthly (55 RS)') { price = '₹55'; days = 30; }
+                            if (val === '90 Days (149 RS)') { price = '₹149'; days = 90; }
+                            
+                            const expiry = new Date(new Date(userFormData.startDate).getTime() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                            setUserFormData({...userFormData, planName: val, planPrice: price, expiryDate: expiry});
+                          }}
+                          className="w-full bg-[#111] border border-[#222] rounded-xl py-4 px-5 focus:border-blue-500 outline-none transition-all text-sm font-bold appearance-none"
+                        >
+                          <option value="Weekly (19 RS)">Weekly (19 RS)</option>
+                          <option value="Monthly (55 RS)">Monthly (55 RS)</option>
+                          <option value="90 Days (149 RS)">90 Days (149 RS)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Start Date</label>
+                        <input 
+                          type="date" 
+                          value={userFormData.startDate}
+                          onChange={e => {
+                            const start = e.target.value;
+                            let days = 7;
+                            if (userFormData.planName === 'Monthly (55 RS)') days = 30;
+                            if (userFormData.planName === '90 Days (149 RS)') days = 90;
+                            const expiry = new Date(new Date(start).getTime() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                            setUserFormData({...userFormData, startDate: start, expiryDate: expiry});
+                          }}
+                          className="w-full bg-[#111] border border-[#222] rounded-xl py-4 px-5 focus:border-blue-500 outline-none transition-all text-sm font-bold"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-[#555] uppercase tracking-widest ml-1">Expiry Date</label>
+                        <input 
+                          type="date" 
+                          value={userFormData.expiryDate}
+                          onChange={e => setUserFormData({...userFormData, expiryDate: e.target.value})}
+                          className="w-full bg-[#111] border border-[#222] rounded-xl py-4 px-5 focus:border-blue-500 outline-none transition-all text-sm font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 pt-4">
+                      <button 
+                        type="submit" 
+                        disabled={isUserSubmitting}
+                        className="flex-1 bg-[#e50914] hover:bg-[#ff0f1a] disabled:bg-[#8b0000] text-white font-black py-5 rounded-2xl transition-all uppercase tracking-widest shadow-[0_0_30px_rgba(229,9,20,0.3)] active:scale-95"
+                      >
+                        {isUserSubmitting ? 'SYNCING...' : (userEditId ? 'UPDATE ACCOUNT' : 'SYNC TO CLOUD')}
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={resetUserForm}
+                        className="px-10 bg-[#222] hover:bg-[#333] text-white font-black rounded-2xl transition-all active:scale-95 uppercase tracking-widest"
+                      >
+                        RESET
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* User Table */}
+                <div className="bg-[#111] border border-[#222] rounded-2xl overflow-hidden shadow-2xl">
+                  <div className="p-4 border-b border-[#222] flex justify-between items-center bg-zinc-900/50">
+                    <h5 className="font-black text-[9px] uppercase tracking-[0.4em] text-[#e50914]">SYSTEM IDENTITY DATABASE</h5>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-black/40 text-[8px] font-black uppercase tracking-[0.3em] text-[#555]">
+                        <tr>
+                          <th className="p-4">Name</th>
+                          <th className="p-4">ID</th>
+                          <th className="p-4">Pass</th>
+                          <th className="p-4 text-center">Plan</th>
+                          <th className="p-4 text-center">Price</th>
+                          <th className="p-4">Start</th>
+                          <th className="p-4">Expiry</th>
+                          <th className="p-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#222]">
+                        {users.map(user => (
+                          <tr key={user.id} className="group hover:bg-white/[0.02] transition-colors border-b border-[#1a1a1a]">
+                            <td className="p-4 font-bold text-white uppercase italic tracking-tighter text-[10px]">{user.name || 'GUEST USER'}</td>
+                            <td className="p-4"><code className="text-[#3498db] text-[10px] font-bold uppercase">{user.userId}</code></td>
+                            <td className="p-4"><code className="text-[#f1c40f] text-[10px] font-bold uppercase">{user.password || '---'}</code></td>
+                            <td className="p-4 text-center">
+                              <span className="bg-[#e50914] text-white text-[8px] font-black px-2 py-1 rounded uppercase tracking-tighter shadow-xl">
+                                {user.planName || user.plan || 'BASIC'}
+                              </span>
+                            </td>
+                            <td className="p-4 text-center">
+                              <span className="text-white font-black text-[10px]">{user.planPrice || '---'}</span>
+                            </td>
+                            <td className="p-4 text-[#888] text-[9px] font-bold">{user.startDate || 'N/A'}</td>
+                            <td className="p-4">
+                              <div className="flex flex-col">
+                                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-tighter w-fit mb-1 ${user.expiryDate && new Date(user.expiryDate) < new Date() ? 'bg-red-600 text-white' : 'bg-green-600/10 text-green-500'}`}>
+                                  {user.expiryDate && new Date(user.expiryDate) < new Date() ? 'EXPIRED' : 'ACTIVE'}
+                                </span>
+                                <span className="text-white font-black text-[9px] uppercase tracking-tighter italic">{user.expiryDate || user.expiry || 'N/A'}</span>
+                              </div>
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className="flex gap-2 justify-end">
+                                <button onClick={() => prepareUserEdit(user)} className="p-1.5 text-[#3498db] hover:bg-[#3498db]/10 rounded-lg transition-all">
+                                  <Pencil size={14} />
+                                </button>
+                                <button onClick={() => handleUserDelete(user.id)} className="p-1.5 text-[#e50914] hover:bg-[#e50914]/10 rounded-lg transition-all">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             {activeView === 'requests' && (
               <motion.div 
                 key="requests"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="space-y-6"
+                className="space-y-4"
               >
-                <div className="flex justify-between items-center mb-6">
-                  <h4 className="text-xl font-black italic flex items-center gap-3">
-                    <ListVideo className="text-[#e50914]" /> MOVIE REQUESTS
+                <div className="flex justify-between items-center mb-6 px-2">
+                  <h4 className="text-sm font-black italic flex items-center gap-2 uppercase tracking-widest text-zinc-400">
+                    <ListVideo className="text-[#e50914]" size={16} /> Incoming Requests
                   </h4>
                   <button 
                     onClick={handleClearSolvedRequests}
-                    className="text-[10px] font-black text-red-500 hover:text-red-400 uppercase tracking-widest border border-red-500/20 px-4 py-2 rounded-lg hover:bg-red-500/5 transition-all"
+                    className="text-[8px] font-black text-red-600 hover:text-red-500 uppercase tracking-[0.4em] border border-red-600/10 px-4 py-2 rounded-lg hover:bg-red-600/5 transition-all"
                   >
-                    Clear Solved
+                    Wipe Processed
                   </button>
                 </div>
 
-                <div className="space-y-4">
+                <div className="grid gap-3">
                   {movieRequests.length === 0 ? (
-                    <div className="bg-[#111] border border-[#222] p-20 rounded-[2rem] text-center text-[#444] font-black uppercase tracking-[0.3em]">
-                      No active requests
+                    <div className="bg-[#111] border border-[#222] p-12 rounded-2xl text-center text-[#444] font-black uppercase tracking-[0.4em] text-[10px]">
+                      Zero Active Requests
                     </div>
                   ) : (
                     movieRequests.map((req) => (
                       <div 
                         key={req.id} 
-                        className={`bg-[#1a1a1a] border border-[#222] p-6 rounded-2xl transition-all hover:border-white/10 ${req.status === 'solved' ? 'border-l-4 border-l-green-500 opacity-80' : ''}`}
+                        className={`bg-[#0d0d0d] border border-[#222] p-5 rounded-2xl transition-all hover:border-white/10 ${req.status === 'solved' ? 'border-l-2 border-l-green-500 opacity-60 scale-98' : ''}`}
                       >
-                        <div className="flex flex-col md:flex-row justify-between gap-6">
+                        <div className="flex flex-col md:flex-row justify-between gap-5">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <h5 className="text-lg font-black text-white uppercase italic tracking-tighter">{req.title}</h5>
-                              <span className="text-zinc-500 text-xs font-bold">({req.year || 'N/A'})</span>
+                              <h5 className="text-[13px] font-black text-white uppercase italic tracking-tighter">{req.title}</h5>
+                              <span className="text-zinc-600 text-[10px] font-bold">({req.year || 'N/A'})</span>
                             </div>
-                            <div className="flex flex-wrap gap-2 mb-4">
-                              <span className="text-[9px] font-black bg-zinc-800 text-zinc-400 px-2 py-1 rounded uppercase tracking-widest">{req.category}</span>
-                              <span className="text-[9px] font-black bg-zinc-800 text-zinc-400 px-2 py-1 rounded uppercase tracking-widest">{req.language || 'Any'}</span>
+                            <div className="flex flex-wrap gap-2 mb-3">
+                              <span className="text-[8px] font-black bg-zinc-900 border border-white/5 text-zinc-500 px-2.5 py-1 rounded-md uppercase tracking-widest">{req.category}</span>
+                              <span className="text-[8px] font-black bg-zinc-900 border border-white/5 text-zinc-500 px-2.5 py-1 rounded-md uppercase tracking-widest">{req.language || 'Any Language'}</span>
                             </div>
                             {req.note && (
-                              <p className="text-cyan-500 text-xs font-medium mb-3 bg-cyan-500/5 p-3 rounded-xl border border-cyan-500/10">
-                                <span className="text-[10px] font-black uppercase tracking-widest block mb-1 opacity-50">Note:</span>
+                              <p className="text-cyan-500 text-[10px] font-medium mb-3 bg-cyan-500/5 p-3 rounded-xl border border-cyan-500/10 italic leading-relaxed">
                                 {req.note}
                               </p>
                             )}
-                            <div className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">
-                              Requested by: {req.userName || 'User'} • {req.timestamp?.toDate().toLocaleString() || '...'}
+                            <div className="text-[8px] font-black text-zinc-800 uppercase tracking-widest">
+                               USER: {req.userName || 'GUEST'} <span className="mx-1 opacity-20">|</span> SESSION: {req.timestamp?.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) || 'SYNCING'}
                             </div>
                           </div>
                           <div className="flex flex-row md:flex-col gap-2 justify-end">
                             {req.status !== 'solved' ? (
                               <button 
                                 onClick={() => handleSolveRequest(req.id)}
-                                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white border border-green-600/20 px-5 py-2.5 rounded-xl text-[8px] font-black uppercase tracking-[0.3em] transition-all"
                               >
-                                <Check size={14} /> Solve
+                                <Check size={12} /> Resolve
                               </button>
                             ) : (
-                              <span className="flex-1 md:flex-none bg-green-500/10 text-green-500 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-center border border-green-500/20">
-                                SOLVED
+                              <span className="flex-1 md:flex-none bg-green-600/5 text-green-500/50 px-5 py-2.5 rounded-xl text-[8px] font-black uppercase tracking-[0.3em] text-center border border-green-600/10 italic">
+                                Processed
                               </span>
                             )}
                             <button 
                               onClick={() => handleDeleteRequest(req.id)}
-                              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-800 hover:bg-red-600/20 hover:text-red-500 text-zinc-400 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-transparent hover:border-red-600/20"
+                              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 hover:bg-red-600/10 hover:text-red-500 text-zinc-700 hover:border-red-600/20 border border-white/5 px-5 py-2.5 rounded-xl text-[8px] font-black uppercase tracking-[0.3em] transition-all"
                             >
-                              <Trash size={14} /> Reject
+                              <Trash size={12} /> Discard
                             </button>
                           </div>
                         </div>
@@ -753,14 +1312,14 @@ export default function AdminPanel({
                     <h6 className="text-[10px] font-black text-[#555] uppercase tracking-[0.3em] mb-6">Session Management</h6>
                     <div className="space-y-4">
                       <button 
-                        onClick={handleClearAllSessions}
+                        onClick={onLogoutAll}
                         className="w-full flex items-center justify-center gap-3 px-6 py-5 bg-red-600/10 text-red-600 hover:bg-red-600/20 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border border-red-600/20 shadow-lg active:scale-95"
                       >
                         <Trash2 size={18} /> Force Logout All Users
                       </button>
                       
                       <p className="mt-4 text-[10px] text-[#444] font-bold leading-relaxed text-center uppercase tracking-widest">
-                        Note: Saving a new PIN <span className="text-red-600">automatically resets</span> all active user sessions.
+                        Note: This will <span className="text-red-600">instantly terminate</span> all active user logins across all browsers.
                       </p>
                     </div>
                   </div>
@@ -802,7 +1361,7 @@ export default function AdminPanel({
                         <tr key={movie.id} className="group hover:bg-white/[0.02] transition-colors">
                           <td className="p-6 w-24">
                             <img 
-                              src={movie.image} 
+                              src={movie.image || undefined} 
                               className="w-14 h-20 object-cover rounded-xl border border-[#333] shadow-lg group-hover:scale-105 transition-transform" 
                               alt="" 
                               referrerPolicy="no-referrer"
