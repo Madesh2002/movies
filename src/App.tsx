@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, ChevronLeft, ChevronRight, Search, Bell, Plus, Check, X, Send, Settings, Menu, ShieldCheck, Home, Film, Tv2, Heart, MessageSquarePlus, CircleUser, Lock, User as UserIcon, ChevronDown } from 'lucide-react';
+import { Play, ChevronLeft, ChevronRight, Search, Bell, Plus, Check, X, Send, Settings, Menu, ShieldCheck, Home, Film, Tv2, Heart, MessageSquarePlus, CircleUser, Lock, User as UserIcon } from 'lucide-react';
 import { doc, setDoc, onSnapshot, collection, writeBatch, query, orderBy, serverTimestamp, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Movie, User } from './types';
@@ -59,7 +59,7 @@ const LoginGate = ({ onAuthorized }: { onAuthorized: (userData: any) => void }) 
   const [error, setError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [registerData, setRegisterData] = useState({ name: '', userId: '', password: '', plan: 'Weekly (19 RS)' });
+  const [registerData, setRegisterData] = useState({ name: '', userId: '', password: '' });
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,7 +139,7 @@ const LoginGate = ({ onAuthorized }: { onAuthorized: (userData: any) => void }) 
       });
       
       setError('Request sent! Please wait for admin approval.');
-      setRegisterData({ name: '', userId: '', password: '', plan: 'Weekly (19 RS)' });
+      setRegisterData({ name: '', userId: '', password: '' });
       setTimeout(() => {
         setIsRegistering(false);
         setError('');
@@ -217,28 +217,6 @@ const LoginGate = ({ onAuthorized }: { onAuthorized: (userData: any) => void }) 
             </motion.div>
           )}
 
-          {isRegistering && (
-            <motion.div variants={itemVariants} className="space-y-1">
-              <div className="flex items-center justify-between px-1">
-                <label className="text-[7px] font-black text-zinc-600 uppercase tracking-[0.4em]">Plan</label>
-                <Tv2 className="w-2 h-2 text-red-600/30" />
-              </div>
-              <div className="relative group">
-                <div className="absolute inset-0 bg-red-600/5 rounded-lg blur-md group-focus-within:bg-red-600/10 transition-all opacity-0 group-focus-within:opacity-100" />
-                <select 
-                  value={registerData.plan}
-                  onChange={(e) => setRegisterData({...registerData, plan: e.target.value})}
-                  className="relative w-full bg-black/40 border border-white/5 rounded-lg py-2 px-4 text-[10px] font-black focus:border-red-600 focus:bg-black/60 outline-none transition-all text-white appearance-none cursor-pointer"
-                >
-                  <option className="bg-[#111] text-white" value="Weekly (19 RS)">Weekly (19 RS)</option>
-                  <option className="bg-[#111] text-white" value="Monthly (55 RS)">Monthly (55 RS)</option>
-                  <option className="bg-[#111] text-white" value="90 Days (149 RS)">90 Days (149 RS)</option>
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-red-600 pointer-events-none" />
-              </div>
-            </motion.div>
-          )}
-
           <motion.div variants={itemVariants} className="space-y-1">
             <div className="flex items-center justify-between px-1">
               <label className="text-[7px] font-black text-zinc-600 uppercase tracking-[0.4em]">User Access ID</label>
@@ -297,7 +275,7 @@ const LoginGate = ({ onAuthorized }: { onAuthorized: (userData: any) => void }) 
                 <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <span className="text-[9px] font-bold">{isRegistering ? 'SUBMIT REQUEST' : 'Access Content'}</span>
+                  <span className="text-[9px] font-bold">{isRegistering ? 'Submit Request' : 'Access Content'}</span>
                   <Play className="w-3 h-3 fill-current" />
                 </>
               )}
@@ -698,8 +676,8 @@ const MovieCard = ({ movie, onPlay, onToggleMyList, isInMyList, widthClass = "w-
           <div className="bg-red-600 text-white text-[8px] font-black px-2 py-0.5 rounded shadow-lg backdrop-blur-md border border-red-400/30">
             {quality}
           </div>
-          {(isTrending || movie.isTrending) && (
-            <div className="bg-yellow-500 text-black text-[8px] font-black px-2 py-0.5 rounded shadow-lg flex items-center gap-1 shadow-yellow-500/20">
+          {isTrending && (
+            <div className="bg-yellow-500 text-black text-[8px] font-black px-2 py-0.5 rounded shadow-lg flex items-center gap-1">
               <span className="animate-pulse">🔥</span> TRENDING
             </div>
           )}
@@ -1385,10 +1363,10 @@ export default function App() {
                 <HeroBanner movies={movies} onPlay={handlePlay} />
                 <div className="pb-20 mt-4 sm:mt-8">
                   {/* Trending Section */}
-                  {movies.filter(m => m.isTrending).length > 0 && (
+                  {movies.length > 0 && (
                     <MovieRow 
                       title="Trending Now" 
-                      movies={movies.filter(m => m.isTrending).slice(0, 10)} 
+                      movies={movies.slice(0, 10)} 
                       myList={movies.filter(m => myListIds.includes(m.id))}
                       onPlay={handlePlay}
                       onInfo={handlePlay}
