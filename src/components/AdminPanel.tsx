@@ -9,7 +9,7 @@ import {
   LayoutGrid, PlusCircle, ShieldCheck, Search, Pencil, Trash2, X, 
   Menu, Play, Trash, Check, Globe, Calendar, FileText,
   Clapperboard, ListVideo, AlertTriangle, BrainCircuit, TrendingDown, TrendingUp, Scan,
-  CircleUser, ChevronRight
+  CircleUser, ChevronRight, RefreshCw, UserCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast, ToastContainer } from 'react-toastify';
@@ -171,18 +171,15 @@ export default function AdminPanel({
 
       if (amtMatch) {
         const val = parseFloat(amtMatch[1].replace(/,/g, ''));
-        let plan = 'Basic';
-        let expiry = '';
-        const today = new Date();
-        
+        price = `₹${val}`;
         if (val >= 149) {
-          plan = 'Ultimate';
+          plan = '90 Days (149 RS)';
           today.setDate(today.getDate() + 90);
         } else if (val >= 55) {
-          plan = 'Premium';
+          plan = 'Monthly (55 RS)';
           today.setDate(today.getDate() + 30);
         } else {
-          plan = 'Basic';
+          plan = 'Weekly (19 RS)';
           today.setDate(today.getDate() + 7);
         }
         
@@ -291,9 +288,12 @@ export default function AdminPanel({
         userId: userFormData.userId.trim(),
         password: userFormData.password.trim(),
         name: userFormData.name.trim(),
+        plan: userFormData.planName,
         planName: userFormData.planName,
         planPrice: userFormData.planPrice,
+        amount: userFormData.planPrice.replace(/\D/g, ''),
         startDate: userFormData.startDate,
+        expiry: userFormData.expiryDate,
         expiryDate: userFormData.expiryDate,
         trxId: userFormData.trxId.trim(),
         features: userFormData.features.split(',').map(f => f.trim()).filter(f => f),
@@ -525,19 +525,25 @@ export default function AdminPanel({
       const userRef = doc(db, "users", req.userId);
       const reqRef = doc(db, "registrationRequests", req.id);
       
-      const planName = req.planName || 'Weekly (19 RS)';
+      const plan = req.plan || req.planName || 'Weekly (19 RS)';
       let price = '₹19';
       let days = 7;
-      if (planName === 'Monthly (55 RS)') { price = '₹55'; days = 30; }
-      if (planName === '90 Days (149 RS)') { price = '₹149'; days = 90; }
+      if (plan === 'Monthly (55 RS)') { price = '₹55'; days = 30; }
+      if (plan === '90 Days (149 RS)') { price = '₹149'; days = 90; }
+
+      const startDate = new Date().toISOString().split('T')[0];
+      const expiry = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
       batch.set(userRef, {
         name: req.name,
         password: req.password,
-        planName,
+        plan,
+        planName: plan, // Keep both for safety
         planPrice: price,
-        startDate: new Date().toISOString().split('T')[0],
-        expiryDate: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        amount: price.replace(/\D/g, ''), // Match user snippet
+        startDate,
+        expiry,
+        expiryDate: expiry, // Keep both for safety
         createdAt: serverTimestamp(),
         isActive: true
       });
@@ -800,11 +806,22 @@ export default function AdminPanel({
                           <h6 className="text-[10px] font-black uppercase tracking-widest text-[#555]">Business Status</h6>
                         </div>
                         <h4 className={`text-2xl font-black mb-2 ${financeStats.revenue - financeStats.expenses > 0 ? 'text-green-500' : 'text-red-600'}`}>
-                          {financeStats.revenue - financeStats.expenses > 0 ? 'NET PROFIT' : 'FINANCIAL DEFICIT'}
+                          {financeStats.revenue - financeStats.expenses > 0 ? 'STATUS: PROFIT' : 'STATUS: LOSS'}
                         </h4>
                         <p className="text-[10px] font-black text-[#444] uppercase tracking-widest">
                           Matched Balance: {Math.abs(financeStats.revenue - financeStats.expenses)} RS
                         </p>
+                        
+                        <div className="p-4 bg-blue-500/10 border-l-4 border-blue-500 rounded-r-xl mt-4">
+                          <p className="text-blue-500 text-[9px] font-black uppercase tracking-widest flex items-center gap-2 mb-1">
+                            <BrainCircuit size={14} /> AI Finance Advisor
+                          </p>
+                          <p className="text-zinc-400 text-[10px] font-medium leading-relaxed italic">
+                            {financeStats.revenue - financeStats.expenses > 0 
+                              ? "Net positive revenue achieved. Subscription-Payment parity verified with strict matching logic."
+                              : "Operating at loss. Match logic ensures only verified payments count. Review your fixed costs."}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -976,18 +993,18 @@ export default function AdminPanel({
                 {/* User Form */}
                 <div className="bg-[#141414] border border-[#222] p-5 rounded-2xl shadow-2xl">
                   <div className="flex justify-between items-center mb-5">
-                    <h4 className="text-sm font-black flex items-center gap-3 italic text-purple-500 tracking-tighter uppercase">
-                      <ShieldCheck size={18} /> {userEditId ? 'UPDATE USER ACCOUNT' : 'MEMBER REGISTRATION'}
-                    </h4>
-                    {!userEditId && (
-                      <button 
-                        type="button"
-                        onClick={() => setUserFormData({...userFormData, password: Math.random().toString(36).slice(-8).toUpperCase()})}
-                        className="text-[9px] font-black text-[#888] hover:text-white uppercase tracking-widest transition-colors flex items-center gap-2"
-                      >
-                        <PlusCircle size={12} /> Auto-Generate Pass
-                      </button>
-                    )}
+                    <h2 className="text-xl sm:text-2xl font-black italic uppercase tracking-tighter text-white mb-1">Registration & Renewal</h2>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const newPass = Math.random().toString(36).slice(-8).toUpperCase();
+                        setUserFormData(prev => ({ ...prev, password: newPass }));
+                        toast.info("Security Key Generated");
+                      }}
+                      className="flex items-center gap-2 bg-blue-600/10 hover:bg-blue-600 text-blue-500 hover:text-white border border-blue-600/20 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                    >
+                      <RefreshCw size={14} /> Auto-Generate
+                    </button>
                   </div>
                   
                   <form onSubmit={handleUserSubmit} className="space-y-5">
@@ -1210,17 +1227,17 @@ export default function AdminPanel({
                             <td className="p-4"><code className="text-[#f1c40f] text-[10px] font-bold uppercase">{user.password || '---'}</code></td>
                             <td className="p-4 text-center">
                               <span className="bg-[#e50914] text-white text-[8px] font-black px-2 py-1 rounded uppercase tracking-tighter shadow-xl">
-                                {user.planName || user.plan || 'BASIC'}
+                                {user.plan || user.planName || 'BASIC'}
                               </span>
                             </td>
                             <td className="p-4 text-center">
-                              <span className="text-white font-black text-[10px]">{user.planPrice || '---'}</span>
+                              <span className="text-white font-black text-[10px]">{user.planPrice || (user.amount ? `₹${user.amount}` : '---')}</span>
                             </td>
                             <td className="p-4 text-[#888] text-[9px] font-bold">{user.startDate || 'N/A'}</td>
                             <td className="p-4">
                               <div className="flex flex-col">
-                                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-tighter w-fit mb-1 ${user.expiryDate && new Date(user.expiryDate) < new Date() ? 'bg-red-600 text-white' : 'bg-green-600/10 text-green-500'}`}>
-                                  {user.expiryDate && new Date(user.expiryDate) < new Date() ? 'EXPIRED' : 'ACTIVE'}
+                                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-tighter w-fit mb-1 ${(user.expiryDate || user.expiry) && new Date(user.expiryDate || user.expiry) < new Date() ? 'bg-red-600 text-white' : 'bg-green-600/10 text-green-500'}`}>
+                                  {(user.expiryDate || user.expiry) && new Date(user.expiryDate || user.expiry) < new Date() ? 'EXPIRED' : 'ACTIVE'}
                                 </span>
                                 <span className="text-white font-black text-[9px] uppercase tracking-tighter italic">{user.expiryDate || user.expiry || 'N/A'}</span>
                               </div>
@@ -1252,67 +1269,72 @@ export default function AdminPanel({
                 exit={{ opacity: 0, x: 20 }}
                 className="space-y-6"
               >
-                <div className="flex justify-between items-center mb-6">
-                  <h4 className="text-sm font-black italic flex items-center gap-3 uppercase tracking-widest text-[#e50914]">
-                    <CircleUser size={18} /> MEMBER APPROVAL CENTER
-                  </h4>
-                </div>
-
-                <div className="grid gap-3">
-                  {memberRequests.length === 0 ? (
-                    <div className="bg-[#111] border border-[#222] p-12 rounded-2xl text-center text-[#444] font-black uppercase tracking-[0.4em] text-[10px]">
-                      No Pending Account Requests
-                    </div>
-                  ) : (
-                    memberRequests.map((req) => (
-                      <div 
-                        key={req.id} 
-                        className="bg-[#0d0d0d] border border-[#222] p-5 rounded-2xl transition-all hover:border-white/10 group shadow-lg"
-                      >
-                        <div className="flex flex-col md:flex-row justify-between gap-5">
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-3">
-                              <span className="text-zinc-600 text-[8px] font-black uppercase tracking-widest">Candidate:</span>
-                              <h5 className="text-[14px] font-black text-white uppercase italic tracking-tighter">{req.name}</h5>
-                            </div>
-                            <div className="flex flex-wrap gap-4 pt-2">
-                              <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-zinc-700 uppercase tracking-widest mb-1">Proposed ID</span>
-                                <code className="text-[#3498db] text-xs font-bold uppercase bg-[#3498db]/5 px-2 py-1 rounded border border-[#3498db]/10">{req.userId}</code>
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-zinc-700 uppercase tracking-widest mb-1">Access Key</span>
-                                <code className="text-[#f1c40f] text-xs font-bold uppercase bg-[#f1c40f]/5 px-2 py-1 rounded border border-[#f1c40f]/10">{req.password}</code>
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-zinc-700 uppercase tracking-widest mb-1">Plan Requested</span>
-                                <span className="text-red-500 text-xs font-bold uppercase bg-red-500/5 px-2 py-1 rounded border border-red-500/10 transition-all group-hover:bg-red-500/10">
-                                  {req.planName || 'Weekly (19 RS)'}
+                <div className="bg-[#111] border border-[#222] rounded-2xl overflow-hidden shadow-2xl">
+                  <div className="p-5 border-b border-[#222] flex justify-between items-center bg-zinc-900/50">
+                    <h5 className="font-black text-[10px] uppercase tracking-[0.4em] text-[#e50914] flex items-center gap-2">
+                      <UserCheck size={16} /> REGISTRATION APPROVAL CENTER
+                    </h5>
+                    <span className="bg-[#1a1a1a] text-zinc-500 text-[9px] font-black px-3 py-1 rounded-full border border-white/5">
+                      {memberRequests.length} PENDING
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-black/40 text-[8px] font-black uppercase tracking-[0.3em] text-[#555]">
+                        <tr>
+                          <th className="p-4">Candidate Name</th>
+                          <th className="p-4">Proposed ID</th>
+                          <th className="p-4">Security Key</th>
+                          <th className="p-4 text-center">Plan Requested</th>
+                          <th className="p-4">Request Date</th>
+                          <th className="p-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#222]">
+                        {memberRequests.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="p-12 text-center text-[#444] font-black uppercase tracking-[0.4em] text-[10px]">
+                              Zero Pending Account Requests
+                            </td>
+                          </tr>
+                        ) : (
+                          memberRequests.map((req) => (
+                            <tr key={req.id} className="group hover:bg-white/[0.02] transition-colors border-b border-[#1a1a1a]">
+                              <td className="p-4 font-bold text-white uppercase italic tracking-tighter text-[11px]">{req.name}</td>
+                              <td className="p-4"><code className="text-[#3498db] text-[10px] font-bold uppercase">{req.userId}</code></td>
+                              <td className="p-4"><code className="text-[#f1c40f] text-[10px] font-bold uppercase">{req.password}</code></td>
+                              <td className="p-4 text-center">
+                                <span className="bg-red-600/10 text-red-500 border border-red-600/20 text-[8px] font-black px-2 py-1 rounded uppercase tracking-tighter">
+                                  {req.plan || req.planName || 'Weekly (19 RS)'}
                                 </span>
-                              </div>
-                            </div>
-                            <div className="text-[8px] font-black text-zinc-800 uppercase tracking-widest pt-2">
-                               Requested: {req.timestamp?.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) || 'Just Now'}
-                            </div>
-                          </div>
-                          <div className="flex flex-row md:flex-col gap-2 justify-end">
-                            <button 
-                              onClick={() => handleApproveRegistration(req)}
-                              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-green-600/10 hover:bg-green-600 text-green-500 hover:text-white border border-green-600/20 px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] transition-all"
-                            >
-                              <Check size={14} /> Approve
-                            </button>
-                            <button 
-                              onClick={() => handleRejectRegistration(req.id)}
-                              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-600/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-600/20 px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] transition-all"
-                            >
-                              <X size={14} /> Reject
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                              </td>
+                              <td className="p-4 text-zinc-600 text-[9px] font-bold">
+                                {req.timestamp?.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) || 'Just Now'}
+                              </td>
+                              <td className="p-4 text-right">
+                                <div className="flex gap-2 justify-end">
+                                  <button 
+                                    onClick={() => handleApproveRegistration(req)}
+                                    className="p-2 bg-green-600/10 text-green-500 hover:bg-green-600 hover:text-white rounded-lg transition-all border border-green-600/10"
+                                    title="Approve Member"
+                                  >
+                                    <Check size={14} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleRejectRegistration(req.id)}
+                                    className="p-2 bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white rounded-lg transition-all border border-red-600/10"
+                                    title="Reject Request"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </motion.div>
             )}

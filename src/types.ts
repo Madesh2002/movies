@@ -21,11 +21,15 @@ export interface User {
   userId: string;
   password?: string;
   name?: string;
+  plan?: string;
   planName?: string;
   planPrice?: string;
+  amount?: string | number;
   startDate?: string;
+  expiry?: string;
   expiryDate?: string;
   trxId?: string;
+  balance?: string | number;
   features?: string[];
   createdAt?: any;
   updatedAt?: any;

@@ -59,7 +59,7 @@ const LoginGate = ({ onAuthorized }: { onAuthorized: (userData: any) => void }) 
   const [error, setError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [registerData, setRegisterData] = useState({ name: '', userId: '', password: '', planName: 'Weekly (19 RS)' });
+  const [registerData, setRegisterData] = useState({ name: '', userId: '', password: '', plan: 'Weekly (19 RS)' });
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,7 +139,7 @@ const LoginGate = ({ onAuthorized }: { onAuthorized: (userData: any) => void }) 
       });
       
       setError('Request sent! Please wait for admin approval.');
-      setRegisterData({ name: '', userId: '', password: '', planName: 'Weekly (19 RS)' });
+      setRegisterData({ name: '', userId: '', password: '', plan: 'Weekly (19 RS)' });
       setTimeout(() => {
         setIsRegistering(false);
         setError('');
@@ -260,8 +260,8 @@ const LoginGate = ({ onAuthorized }: { onAuthorized: (userData: any) => void }) 
               <div className="relative group">
                 <div className="absolute inset-0 bg-red-600/5 rounded-lg blur-md group-focus-within:bg-red-600/10 transition-all opacity-0 group-focus-within:opacity-100" />
                 <select 
-                  value={registerData.planName}
-                  onChange={(e) => setRegisterData({...registerData, planName: e.target.value})}
+                  value={registerData.plan}
+                  onChange={(e) => setRegisterData({...registerData, plan: e.target.value})}
                   className="relative w-full bg-black/40 border border-white/5 rounded-lg py-2.5 px-4 text-[10px] font-black focus:border-red-600 focus:bg-[#0a0a0a] outline-none transition-all text-white appearance-none cursor-pointer"
                 >
                   <option value="Weekly (19 RS)" className="bg-[#0a0a0a] text-white">Weekly (19 RS)</option>
