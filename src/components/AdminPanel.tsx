@@ -9,7 +9,7 @@ import {
   LayoutGrid, PlusCircle, ShieldCheck, Search, Pencil, Trash2, X, 
   Menu, Play, Trash, Check, Globe, Calendar, FileText,
   Clapperboard, ListVideo, AlertTriangle, BrainCircuit, TrendingDown, TrendingUp, Scan,
-  CircleUser, ChevronRight, RefreshCw, UserCheck, Film, LogOut, Clock, ArrowUpRight
+  CircleUser, ChevronRight, RefreshCw, UserCheck, Film, LogOut, Clock, ArrowUpRight, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast, ToastContainer } from 'react-toastify';
@@ -61,7 +61,7 @@ export default function AdminPanel({
   const [movies, setMovies] = useState<Movie[]>([]);
   const [movieRequests, setMovieRequests] = useState<any[]>([]);
   const [memberRequests, setMemberRequests] = useState<any[]>([]);
-  const [upgradeRequests, setUpgradeRequests] = useState<any[]>([]);
+  const [activationCodes, setActivationCodes] = useState<any[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [systemSettings, setSystemSettings] = useState({ upiId: '', merchantName: 'Bharat Prime' });
   const [searchQuery, setSearchQuery] = useState('');
@@ -126,10 +126,10 @@ export default function AdminPanel({
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, "upgradeRequests"), orderBy("timestamp", "desc"));
+    const q = query(collection(db, "activationCodes"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUpgradeRequests(list);
+      setActivationCodes(list);
     });
     return () => unsubscribe();
   }, []);
@@ -611,62 +611,35 @@ export default function AdminPanel({
     }
   };
 
-  const handleApprovePlanRequest = async (req: any) => {
+  const handleGenerateCode = async (plan: string) => {
     try {
-      const userRef = doc(db, "users", req.userId);
-      const userSnap = await getDoc(userRef);
+      const part1 = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const part2 = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const code = `BP-${part1}-${part2}`;
       
-      if (!userSnap.exists()) {
-        toast.error("User not found");
-        return;
-      }
-
-      const userData = userSnap.data();
-      let currentExpiry = new Date(userData.expiryDate || userData.expiry || Date.now());
-      if (currentExpiry < new Date()) currentExpiry = new Date();
-
-      const planName = req.planName || '';
-      let daysToAdd = 7;
-      let price = '₹19';
-      
-      if (planName.includes('Monthly') || planName.includes('55')) {
-        daysToAdd = 30;
-        price = '₹55';
-      } else if (planName.includes('90') || planName.includes('149')) {
-        daysToAdd = 90;
-        price = '₹149';
-      }
-
-      currentExpiry.setDate(currentExpiry.getDate() + daysToAdd);
-      const newExpiry = currentExpiry.toISOString().split('T')[0];
-
-      const updateData: any = {
-        expiry: newExpiry,
-        expiryDate: newExpiry,
-        plan: planName,
-        planName: planName,
-        planPrice: price,
-        amount: price.replace(/\D/g, ''),
-        trxId: req.transactionId || '',
-        updatedAt: serverTimestamp()
-      };
-
-      await updateDoc(userRef, updateData);
-      await deleteDoc(doc(db, "upgradeRequests", req.id));
-      toast.success(`Plan upgraded to ${planName} for ${req.userId}`);
+      await setDoc(doc(db, "activationCodes", code), {
+        code,
+        plan: plan,
+        planName: plan,
+        isUsed: false,
+        usedBy: '',
+        createdAt: serverTimestamp()
+      });
+      toast.success(`Code Generated: ${code}`);
     } catch (err) {
       console.error(err);
-      toast.error("Approval failed");
+      toast.error("Generation failed");
     }
   };
 
-  const handleRejectPlanRequest = async (id: string) => {
+  const handleDeleteCode = async (codeId: string) => {
     try {
-      await deleteDoc(doc(db, "upgradeRequests", id));
-      toast.info("Request rejected and removed");
+      if (!window.confirm("Delete this activation code?")) return;
+      await deleteDoc(doc(db, "activationCodes", codeId));
+      toast.info("Code deleted");
     } catch (err) {
       console.error(err);
-      toast.error("Rejection failed");
+      toast.error("Deletion failed");
     }
   };
 
@@ -688,14 +661,14 @@ export default function AdminPanel({
     }
   };
 
-  const handleClearPlanRequests = async () => {
-    if (!window.confirm("Clear all processed plan requests?")) return;
+  const handleClearUsedCodes = async () => {
+    if (!window.confirm("Clear all used activation codes?")) return;
     try {
-      const processed = upgradeRequests.filter(r => r.status !== 'pending');
+      const used = activationCodes.filter(c => c.isUsed);
       const batch = writeBatch(db);
-      processed.forEach(r => batch.delete(doc(db, "upgradeRequests", r.id)));
+      used.forEach(c => batch.delete(doc(db, "activationCodes", c.code)));
       await batch.commit();
-      toast.info("Requests Cleared");
+      toast.info("Used codes cleared");
     } catch (error: any) {
       toast.error(error.message);
     }
@@ -725,7 +698,7 @@ export default function AdminPanel({
                    activeView === 'upload' ? 'Database Matrix' : 
                    activeView === 'users' ? 'Onboarding Deck' : 
                    activeView === 'requests' ? 'Content Requests' : 
-                   activeView === 'plan-requests' ? 'Upgrade Requests' : 'Security Shield'}
+                   activeView === 'plan-requests' ? 'Activation Codes' : 'Security Shield'}
                 </h1>
               </div>
             </div>
@@ -768,16 +741,17 @@ export default function AdminPanel({
                   className="space-y-8"
                 >
                   {/* Top Stats Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
                     {[
-                      { label: 'Total Assets', value: stats.total, color: 'border-red-600', text: 'text-white' },
-                      { label: 'Active Members', value: stats.totalUsers, color: 'border-green-500', text: 'text-green-500' },
-                      { label: 'Pending Requests', value: stats.pendingRequests, color: 'border-yellow-500', text: 'text-yellow-500' },
-                      { label: 'Live Movies', value: stats.movies, color: 'border-blue-500', text: 'text-blue-500' }
+                      { label: 'Assets', value: stats.total, color: 'border-red-600', text: 'text-white' },
+                      { label: 'Members', value: stats.totalUsers, color: 'border-green-500', text: 'text-green-500' },
+                      { label: 'Pending Reqs', value: stats.pendingRequests, color: 'border-yellow-500', text: 'text-yellow-500' },
+                      { label: 'Active Keys', value: activationCodes.filter(c => !c.isUsed).length, color: 'border-purple-500', text: 'text-purple-500' },
+                      { label: 'Revenue', value: `₹${financeStats.revenue}`, color: 'border-blue-500', text: 'text-blue-500' }
                     ].map((s, i) => (
                       <div key={i} className={`glass-card p-6 border-b-4 ${s.color} hover:translate-y-[-4px] transition-all duration-300`}>
                         <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{s.label}</p>
-                        <div className={`text-4xl font-black mt-2 tracking-tighter ${s.text}`}>{s.value}</div>
+                        <div className={`text-3xl font-black mt-2 tracking-tighter sm:truncate ${s.text}`}>{s.value}</div>
                       </div>
                     ))}
                   </div>
@@ -1324,79 +1298,119 @@ export default function AdminPanel({
                   </div>
                 </div>
 
-                {/* Member Database Table */}
-                <div className="glass-card overflow-hidden">
-                  <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                    <h3 className="text-sm font-black uppercase italic tracking-widest text-green-500 flex items-center gap-2">
-                      <ShieldCheck size={16} /> VERIFIED MEMBER DATABASE
-                    </h3>
-                    <button 
-                      onClick={handleClearExpiredUsers}
-                      className="text-[8px] font-black text-red-600 hover:text-red-500 uppercase tracking-[0.4em] border border-red-600/10 px-4 py-2 rounded-lg hover:bg-red-600/5 transition-all"
-                    >
-                      Purge Expired
-                    </button>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                  {/* Recent Activity / Content Requests Preview */}
+                  <div className="glass-card overflow-hidden">
+                    <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                      <h3 className="text-sm font-black uppercase italic tracking-widest text-red-500 flex items-center gap-2">
+                        <FileText size={16} /> RECENT CONTENT REQUESTS
+                      </h3>
+                      <button 
+                        onClick={() => setActiveView('requests')}
+                        className="text-[8px] font-black text-zinc-500 hover:text-white uppercase tracking-[0.4em] transition-all"
+                      >
+                        View All
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-4">
+                      {movieRequests.slice(0, 4).map((req) => (
+                        <div key={req.id} className="bg-black/40 border border-white/5 p-4 rounded-2xl flex items-center justify-between group">
+                          <div>
+                            <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-300 group-hover:text-red-500 transition-colors">{req.title}</h4>
+                            <p className="text-[7px] font-black text-zinc-600 uppercase tracking-widest mt-1">
+                              {req.category} • {req.language} • {req.status}
+                            </p>
+                          </div>
+                          {req.status === 'pending' && (
+                            <button 
+                              onClick={() => handleSolveRequest(req.id)}
+                              className="p-2 bg-green-600/10 text-green-500 rounded-lg border border-green-600/10 hover:bg-green-600 hover:text-white transition-all"
+                            >
+                              <Check size={12} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {movieRequests.length === 0 && (
+                        <p className="text-center py-6 text-[8px] font-black text-zinc-700 uppercase tracking-widest">No Recent Requests</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="overflow-x-auto p-4 custom-scrollbar">
-                    <table className="table w-full border-separate border-spacing-y-2">
-                      <thead className="bg-[#050505] text-[8px] font-black uppercase tracking-[0.3em] text-[#444]">
-                        <tr>
-                          <th className="rounded-l-lg p-4">Member ID</th>
-                          <th className="p-4">Active Plan</th>
-                          <th className="p-4">Paid Amt</th>
-                          <th className="p-4">Expiry Timeline</th>
-                          <th className="rounded-r-lg p-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="space-y-2">
-                        {users.map(user => {
-                          const isExpired = (user.expiryDate || user.expiry) && new Date(user.expiryDate || user.expiry) < new Date();
-                          return (
-                            <tr key={user.id} className="bg-white/[0.02] hover:bg-white/[0.04] transition-all group border-none shadow-xl">
-                              <td className="p-4 rounded-l-xl">
-                                <div className="flex flex-col">
-                                  <span className="text-[11px] font-black italic uppercase tracking-tighter text-white">{user.name || 'GUEST'}</span>
-                                  <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">{user.userId}</span>
-                                </div>
-                              </td>
-                              <td className="p-4">
-                                <span className="badge badge-success border-green-600/30 text-green-500 bg-green-600/5 text-[8px] font-black uppercase px-3 py-3 rounded-lg">
-                                  {user.plan || user.planName || "VIP Access"}
-                                </span>
-                              </td>
-                              <td className="p-4">
-                                <span className="text-[10px] font-black text-white">{user.planPrice || (user.amount ? `₹${user.amount}` : '---')}</span>
-                              </td>
-                              <td className="p-4">
-                                <div className="flex flex-col gap-1">
-                                  <span className={`text-[9px] font-black uppercase tracking-widest ${isExpired ? 'text-red-500' : 'text-zinc-500'}`}>
-                                    {isExpired ? 'EXPIRED' : (user.expiryDate || user.expiry || 'N/A')}
+
+                  {/* Member Database Table */}
+                  <div className="glass-card overflow-hidden">
+                    <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                      <h3 className="text-sm font-black uppercase italic tracking-widest text-green-500 flex items-center gap-2">
+                        <ShieldCheck size={16} /> VERIFIED MEMBER DATABASE
+                      </h3>
+                      <button 
+                        onClick={handleClearExpiredUsers}
+                        className="text-[8px] font-black text-red-600 hover:text-red-500 uppercase tracking-[0.4em] border border-red-600/10 px-4 py-2 rounded-lg hover:bg-red-600/5 transition-all"
+                      >
+                        Purge Expired
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto p-4 custom-scrollbar">
+                      <table className="table w-full border-separate border-spacing-y-2">
+                        <thead className="bg-[#050505] text-[8px] font-black uppercase tracking-[0.3em] text-[#444]">
+                          <tr>
+                            <th className="rounded-l-lg p-4">Member ID</th>
+                            <th className="p-4">Active Plan</th>
+                            <th className="p-4">Paid Amt</th>
+                            <th className="p-4">Expiry Timeline</th>
+                            <th className="rounded-r-lg p-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="space-y-2">
+                          {users.map(user => {
+                            const isExpired = (user.expiryDate || user.expiry) && new Date(user.expiryDate || user.expiry) < new Date();
+                            return (
+                              <tr key={user.id} className="bg-white/[0.02] hover:bg-white/[0.04] transition-all group border-none shadow-xl">
+                                <td className="p-4 rounded-l-xl">
+                                  <div className="flex flex-col">
+                                    <span className="text-[11px] font-black italic uppercase tracking-tighter text-white">{user.name || 'GUEST'}</span>
+                                    <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">{user.userId}</span>
+                                  </div>
+                                </td>
+                                <td className="p-4">
+                                  <span className="badge badge-success border-green-600/30 text-green-500 bg-green-600/5 text-[8px] font-black uppercase px-3 py-3 rounded-lg">
+                                    {user.plan || user.planName || "VIP Access"}
                                   </span>
-                                  {(user.expiryDate || user.expiry) && (
-                                    <div className="w-24 h-1 bg-zinc-900 rounded-full overflow-hidden">
-                                      <div 
-                                        className={`h-full ${isExpired ? 'bg-red-600' : 'bg-green-500'}`} 
-                                        style={{ width: `${Math.max(0, Math.min(100, (new Date(user.expiryDate || user.expiry).getTime() - Date.now()) / (30 * 24 * 60 * 60 * 1000) * 100))}%` }}
-                                      ></div>
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="p-4 text-right rounded-r-xl">
-                                <div className="flex gap-2 justify-end">
-                                  <button onClick={() => prepareUserEdit(user)} className="p-3 bg-blue-600/5 text-blue-500 hover:bg-blue-600 hover:text-white rounded-xl transition-all border border-blue-600/10 active:scale-90 shadow-lg">
-                                    <Pencil size={14} />
-                                  </button>
-                                  <button onClick={() => handleUserDelete(user.userId)} className="p-3 bg-red-600/5 text-red-500 hover:bg-red-600 hover:text-white rounded-xl transition-all border border-red-600/10 active:scale-90 shadow-lg">
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                </td>
+                                <td className="p-4">
+                                  <span className="text-[10px] font-black text-white">{user.planPrice || (user.amount ? `₹${user.amount}` : '---')}</span>
+                                </td>
+                                <td className="p-4">
+                                  <div className="flex flex-col gap-1">
+                                    <span className={`text-[9px] font-black uppercase tracking-widest ${isExpired ? 'text-red-500' : 'text-zinc-500'}`}>
+                                      {isExpired ? 'EXPIRED' : (user.expiryDate || user.expiry || 'N/A')}
+                                    </span>
+                                    {(user.expiryDate || user.expiry) && (
+                                      <div className="w-24 h-1 bg-zinc-900 rounded-full overflow-hidden">
+                                        <div 
+                                          className={`h-full ${isExpired ? 'bg-red-600' : 'bg-green-500'}`} 
+                                          style={{ width: `${Math.max(0, Math.min(100, (new Date(user.expiryDate || user.expiry).getTime() - Date.now()) / (30 * 24 * 60 * 60 * 1000) * 100))}%` }}
+                                        ></div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-4 text-right rounded-r-xl">
+                                  <div className="flex gap-2 justify-end">
+                                    <button onClick={() => prepareUserEdit(user)} className="p-3 bg-blue-600/5 text-blue-500 hover:bg-blue-600 hover:text-white rounded-xl transition-all border border-blue-600/10 active:scale-90 shadow-lg">
+                                      <Pencil size={14} />
+                                    </button>
+                                    <button onClick={() => handleUserDelete(user.userId)} className="p-3 bg-red-600/5 text-red-500 hover:bg-red-600 hover:text-white rounded-xl transition-all border border-red-600/10 active:scale-90 shadow-lg">
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -1499,108 +1513,83 @@ export default function AdminPanel({
                 exit={{ opacity: 0, x: 20 }}
                 className="space-y-6"
               >
-                <div className="glass-card overflow-hidden">
-                  <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                    <div>
-                      <h3 className="text-sm font-black uppercase italic tracking-widest text-blue-500 flex items-center gap-2">
-                        <Calendar size={16} /> UPGRADE & EXTENSION REQUESTS
-                      </h3>
-                      <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-1">Extensions and Upgrades</p>
-                    </div>
-                    <button 
-                      onClick={handleClearPlanRequests}
-                      className="text-[8px] font-black text-red-600 hover:text-red-500 uppercase tracking-[0.4em] border border-red-600/10 px-4 py-2 rounded-lg hover:bg-red-600/5 transition-all"
-                    >
-                      Clear Processed
-                    </button>
+                <div className="bg-[#229ED9]/5 border border-[#229ED9]/20 rounded-xl p-4 flex gap-4 items-start">
+                  <div className="p-2 bg-[#229ED9]/20 rounded-lg"><Info size={20} className="text-[#229ED9]" /></div>
+                  <div>
+                    <h3 className="font-black text-white text-xs uppercase tracking-widest mb-1">How Activation Codes Work</h3>
+                    <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest leading-relaxed">
+                      1. Click a button below to generate a new Activation Code for a specific plan.<br/>
+                      2. Copy the generated code (e.g. BP-XYZ123) and send it to your user (via Telegram, WhatsApp, etc).<br/>
+                      3. The user selects the plan and enters this code in their "Activate Membership" screen.<br/>
+                      4. The user's account plan and expiry date will be updated instantly!
+                    </p>
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="glass-card p-6 border-t-4 border-zinc-700 text-center bg-white/[0.02]">
+                    <h4 className="font-black text-[10px] uppercase text-zinc-500 tracking-widest">Weekly Access</h4>
+                    <div className="text-2xl font-black my-2 text-white italic tracking-tighter">₹19</div>
+                    <button onClick={() => handleGenerateCode('Weekly (19 RS)')} className="btn btn-xs btn-block bg-zinc-800 border-none text-white font-black hover:bg-zinc-700">Mint Key</button>
+                  </div>
+                  <div className="glass-card p-6 border-t-4 border-red-600 text-center bg-red-600/5">
+                    <h4 className="font-black text-[10px] uppercase text-red-500 tracking-widest">Monthly Access</h4>
+                    <div className="text-2xl font-black my-2 text-white italic tracking-tighter">₹55</div>
+                    <button onClick={() => handleGenerateCode('Monthly (55 RS)')} className="btn btn-xs btn-block bg-red-600 border-none text-white font-black hover:bg-red-700 shadow-lg shadow-red-600/20">Mint Key</button>
+                  </div>
+                  <div className="glass-card p-6 border-t-4 border-blue-600 text-center bg-blue-600/5">
+                    <h4 className="font-black text-[10px] uppercase text-blue-500 tracking-widest">Quarterly Access</h4>
+                    <div className="text-2xl font-black my-2 text-white italic tracking-tighter">₹149</div>
+                    <button onClick={() => handleGenerateCode('90 Days (149 RS)')} className="btn btn-xs btn-block bg-blue-600 border-none text-white font-black hover:bg-blue-700 shadow-lg shadow-blue-600/20">Mint Key</button>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center px-2">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-zinc-800 rounded-lg"><Calendar className="w-4 h-4 text-zinc-400" /></div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Generation Logs & Audit</span>
+                  </div>
+                  <button onClick={handleClearUsedCodes} className="text-[8px] font-black text-red-600 hover:text-red-500 uppercase tracking-[0.4em] border border-red-600/10 px-4 py-2 rounded-lg hover:bg-red-600/5 transition-all">Clear Used</button>
+                </div>
+                <div className="glass-card overflow-hidden">
                   <div className="overflow-x-auto p-4 custom-scrollbar">
                     <table className="table w-full border-separate border-spacing-y-2">
                       <thead className="bg-[#050505] text-[8px] font-black uppercase tracking-[0.3em] text-[#444]">
                         <tr>
-                          <th className="rounded-l-lg p-4">Member Identity (ID/PASS)</th>
-                          <th className="p-4">Transaction UTR</th>
-                          <th className="p-4">Current Configuration</th>
-                          <th className="p-4">Upgrade Path (Target)</th>
-                          <th className="p-4">Request Meta</th>
-                          <th className="rounded-r-lg p-4 text-right">Operational Actions</th>
+                          <th className="rounded-l-lg p-4">Code</th>
+                          <th className="p-4">Plan Name</th>
+                          <th className="p-4">Status</th>
+                          <th className="p-4">Used By</th>
+                          <th className="rounded-r-lg p-4 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="space-y-2">
-                        {upgradeRequests.length === 0 ? (
+                        {activationCodes.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="text-center py-20 text-zinc-700 font-black uppercase tracking-[0.5em] text-[10px]">
-                              Zero Plan Requests
+                            <td colSpan={5} className="text-center py-20 text-zinc-700 font-black uppercase tracking-[0.5em] text-[10px]">
+                              Zero Activation Codes
                             </td>
                           </tr>
                         ) : (
-                          upgradeRequests.map((req) => {
-                            const targetUser = users.find(u => u.userId === req.userId);
-                            return (
-                              <tr key={req.id} className={`bg-white/[0.02] hover:bg-white/[0.04] transition-all group border-none shadow-xl ${req.status !== 'pending' ? 'opacity-40 grayscale' : ''}`}>
-                                <td className="p-4 rounded-l-xl">
-                                  <div className="flex flex-col gap-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                                      <span className="text-[11px] font-black italic uppercase tracking-tighter text-white">{req.userName || targetUser?.name || 'Anonymous'}</span>
-                                    </div>
-                                    <div className="flex flex-col px-3">
-                                      <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest leading-none">UID: {req.userId}</span>
-                                      <span className="text-[8px] text-blue-400 font-black uppercase tracking-widest mt-0.5 leading-none">PASS: {targetUser?.password || '••••'}</span>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="p-4">
-                                  {req.transactionId ? (
-                                    <code className="text-yellow-500 text-[10px] font-black bg-yellow-500/10 px-3 py-1.5 rounded-lg border border-yellow-500/20 shadow-lg">{req.transactionId}</code>
-                                  ) : (
-                                    <span className="text-[8px] text-zinc-600 font-black italic uppercase tracking-widest opacity-40">N/A</span>
-                                  )}
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex flex-col gap-1">
-                                    <div className="text-[9px] font-black text-white/50 uppercase tracking-tighter">{targetUser?.plan || 'Standard Access'}</div>
-                                    <div className="text-[7px] text-zinc-500 font-black uppercase tracking-widest flex items-center gap-1">
-                                      <Clock size={8} className="text-red-500/60" /> {targetUser?.expiryDate || 'EXPIRY N/A'}
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex flex-col">
-                                    <div className="flex items-center gap-1">
-                                      <ArrowUpRight size={10} className="text-green-500" />
-                                      <span className="text-[10px] font-black text-green-500 uppercase italic tracking-tighter">{req.planName}</span>
-                                    </div>
-                                    <span className="text-[8px] text-zinc-400 font-black uppercase tracking-widest mt-0.5">
-                                      Price: {req.planName?.includes('Weekly') ? '₹19' : req.planName?.includes('Monthly') ? '₹55' : '₹149'}
-                                    </span>
-                                  </div>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex flex-col gap-1">
-                                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md inline-block w-fit ${req.status === 'approved' ? 'bg-green-500/10 text-green-500' : req.status === 'rejected' ? 'bg-red-500/10 text-red-500' : 'bg-yellow-500/10 text-yellow-500 animate-pulse'}`}>
-                                      {req.status}
-                                    </span>
-                                    <span className="text-[7px] text-zinc-600 font-bold uppercase tracking-widest">
-                                      {req.timestamp?.toDate().toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) || 'SYNCING...'}
-                                    </span>
-                                  </div>
-                                </td>
-                                <td className="p-4 text-right rounded-r-xl">
-                                  {req.status === 'pending' && (
-                                    <div className="flex gap-2 justify-end">
-                                      <button onClick={() => handleApprovePlanRequest(req)} className="btn btn-xs h-9 px-4 bg-green-600 border-none hover:bg-green-700 text-white font-black uppercase text-[8px] tracking-widest rounded-lg shadow-lg shadow-green-600/20 active:scale-95">
-                                        APPROVE
-                                      </button>
-                                      <button onClick={() => handleRejectPlanRequest(req.id)} className="btn btn-xs h-9 px-4 bg-zinc-800 border-none hover:bg-zinc-700 text-red-500 font-black uppercase text-[8px] tracking-widest rounded-lg active:scale-95">
-                                        DENY
-                                      </button>
-                                    </div>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })
+                          activationCodes.map((code) => (
+                            <tr key={code.id} className={`bg-white/[0.02] hover:bg-white/[0.04] transition-all group border-none shadow-xl ${code.isUsed ? 'opacity-40 grayscale' : ''}`}>
+                              <td className="p-4 rounded-l-xl">
+                                <code className="text-white text-[12px] font-black tracking-widest">{code.code}</code>
+                              </td>
+                              <td className="p-4 text-[10px] uppercase font-bold text-zinc-300">{code.planName}</td>
+                              <td className="p-4">
+                                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md ${code.isUsed ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'}`}>
+                                  {code.isUsed ? 'USED' : 'ACTIVE'}
+                                </span>
+                              </td>
+                              <td className="p-4 text-[10px] font-bold text-zinc-400">{code.usedBy || '---'}</td>
+                              <td className="p-4 text-right rounded-r-xl">
+                                <button onClick={() => handleDeleteCode(code.id)} className="btn btn-xs btn-ghost text-red-500">
+                                  <Trash2 size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
                         )}
                       </tbody>
                     </table>
@@ -1856,7 +1845,7 @@ export default function AdminPanel({
               {[
                 { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
                 { id: 'registrations', label: 'Approvals', icon: UserCheck, badge: memberRequests.length },
-                { id: 'plan-requests', label: 'Upgrades', icon: Calendar, badge: upgradeRequests.filter(r => r.status === 'pending').length },
+                { id: 'plan-requests', label: 'Activation Codes', icon: Calendar, badge: activationCodes.filter(c => !c.isUsed).length },
                 { id: 'upload', label: 'Add Content', icon: ListVideo },
                 { id: 'users', label: 'Members', icon: ShieldCheck },
                 { id: 'requests', label: 'Content Requests', icon: FileText, badge: stats.pendingRequests },

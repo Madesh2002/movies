@@ -75,6 +75,19 @@
       },
       "required": ["userId", "type", "status", "timestamp"]
     },
+    "activationCode": {
+      "title": "Activation Code",
+      "description": "Code for instantly upgrading plans",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "planName": { "type": "string" },
+        "isUsed": { "type": "boolean" },
+        "usedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "planName", "isUsed", "createdAt"]
+    },
     "setting": {
       "title": "System Setting",
       "description": "Global application configuration",
@@ -97,6 +110,10 @@
     "/users/{userId}": {
       "schema": "user",
       "description": "Collection of user identities and subscription plans"
+    },
+    "/activationCodes/{codeId}": {
+      "schema": "activationCode",
+      "description": "Collection of generated activation codes for plans"
     },
     "/settings/{settingId}": {
       "schema": "setting",

@@ -736,7 +736,11 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
               className="absolute inset-0 z-20 flex flex-col justify-between p-6 bg-gradient-to-b from-black/60 via-transparent to-black/60"
             >
               {/* Top Bar */}
-              <div className="flex items-center justify-between">
+              <div 
+                className="flex items-center justify-between pointer-events-auto"
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchMove={(e) => e.stopPropagation()}
+              >
                 <div className="flex items-center gap-4">
                   {!isLocked && (
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors text-white">
@@ -765,7 +769,11 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
 
               {/* Center Controls */}
               {!isLocked && (
-                <div className="flex items-center justify-center gap-8 md:gap-16">
+                <div 
+                  className="flex items-center justify-center gap-8 md:gap-16 pointer-events-auto"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                >
                   <div className="flex items-center gap-8 md:gap-12">
                     <button onClick={() => skip(-10)} className="relative p-2 hover:bg-white/10 rounded-full transition-colors text-white group">
                       <RotateCcw size={40} />
@@ -913,7 +921,11 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
 
               {/* Bottom Bar */}
               {!isLocked && (
-                <div className="w-full px-4 pb-2 space-y-2">
+                <div 
+                  className="w-full px-4 pb-2 space-y-2 pointer-events-auto"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                >
                   {/* Controls Row */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -1040,6 +1052,40 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
                       max={duration || 0}
                       value={currentTime}
                       onChange={handleSeek}
+                      onTouchStart={(e) => {
+                        e.stopPropagation();
+                        // Optional: can initialize preview here too
+                      }}
+                      onTouchMove={(e) => {
+                        e.stopPropagation();
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const touch = e.touches[0];
+                        const percent = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+                        const time = percent * duration;
+                        const posPercent = percent * 100;
+
+                        setPreviewTime(time);
+                        setPreviewPos(posPercent);
+
+                        if (previewVideoRef.current) {
+                          previewVideoRef.current.currentTime = time;
+                        }
+
+                        if (!movie.chapters || !duration) return;
+                        const x = percent * duration;
+                        const chapter = [...movie.chapters].reverse().find(c => c.time <= x);
+                        if (chapter) {
+                          setHoveredChapter({ 
+                            title: chapter.title, 
+                            x: (chapter.time / duration) * 100 
+                          });
+                        }
+                      }}
+                      onTouchEnd={(e) => {
+                        e.stopPropagation();
+                        setHoveredChapter(null);
+                        setPreviewTime(null);
+                      }}
                       onMouseMove={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));

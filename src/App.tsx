@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play, ChevronLeft, ChevronRight, Search, Bell, Plus, Check, X, Send, Settings, Menu, ShieldCheck, Home, Film, Tv2, Heart, MessageSquarePlus, CircleUser, Lock, Calendar, AlertTriangle, User as UserIcon, Clock } from 'lucide-react';
-import { doc, setDoc, onSnapshot, collection, writeBatch, query, orderBy, serverTimestamp, getDoc, updateDoc, getDocs } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, collection, writeBatch, query, orderBy, serverTimestamp, getDoc, updateDoc, getDocs, where, limit, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Movie, User } from './types';
 import { MOVIES } from './constants';
@@ -51,6 +51,13 @@ const getDisplayPlanName = (user: any) => {
   return 'BASIC';
 };
 
+const PLAN_LIMITS: Record<string, number> = {
+  'Weekly (19 RS)': 1,
+  'Monthly (55 RS)': 2,
+  '90 Days (149 RS)': 2,
+  'BASIC': 1 // Default
+};
+
 // --- Components ---
 
 const LoginGate = ({ onAuthorized, systemSettings }: { onAuthorized: (userData: any) => void, systemSettings: any }) => {
@@ -87,15 +94,6 @@ const LoginGate = ({ onAuthorized, systemSettings }: { onAuthorized: (userData: 
       if (userSnap.exists()) {
         const userData = { ...userSnap.data(), userId: userSnap.id } as User;
         if (userData.password === password.trim()) {
-          // Check expiry
-          if (userData.expiryDate) {
-            const expiry = new Date(userData.expiryDate);
-            if (expiry < new Date()) {
-              setError('Your subscription has expired. Please renew.');
-              setIsVerifying(false);
-              return;
-            }
-          }
           onAuthorized(userData);
         } else {
           setError('Invalid login credentials.');
@@ -455,13 +453,18 @@ const Navbar = ({
             >
               BHARAT PRIME
             </motion.h1>
-            <button 
-              onClick={onAdminClick}
-              className="opacity-0 hover:opacity-100 p-2 text-gray-600 transition-opacity hidden sm:block"
-              title="Admin Panel"
-            >
-              <Settings size={16} />
-            </button>
+            {currentUser?.userId === 'admin' && (
+              <button 
+                onClick={onAdminClick}
+                className="flex items-center gap-2 bg-red-600/10 hover:bg-red-600 text-red-600 hover:text-white px-4 py-2 rounded-xl transition-all border border-red-600/20 group ml-2 group"
+                title="Open Admin Shield"
+              >
+                <div className="bg-red-600/20 group-hover:bg-white/20 p-1 rounded-lg transition-colors">
+                  <ShieldCheck size={14} className="fill-current" />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">Admin Dashboard</span>
+              </button>
+            )}
           </div>
           <div className={`hidden md:flex items-center gap-6 lg:gap-8 font-semibold text-gray-400 text-[11px] uppercase tracking-widest`}>
             {navItems.map((item) => (
@@ -495,19 +498,24 @@ const Navbar = ({
             ))}
           </div>
         </div>
-        <div className={`flex items-center gap-3 transition-all duration-300 ${isSearchExpanded ? 'flex-1 justify-end' : 'flex-shrink-0'}`}>
-          <div className={`flex items-center bg-white/5 rounded-full px-4 h-10 transition-all duration-500 border border-white/5 focus-within:border-red-600 focus-within:bg-red-600/5 ${isSearchExpanded ? 'w-full sm:w-64 md:w-80 shadow-[0_0_20px_rgba(229,9,20,0.1)]' : 'w-10 sm:w-12 hover:bg-white/10'}`}>
+        <div className={`flex items-center gap-3 transition-all duration-300 ${isSearchExpanded ? 'flex-1 justify-end ml-4' : 'flex-shrink-0'}`}>
+          <div className={`flex items-center bg-white/5 rounded-full transition-all duration-500 border border-white/5 focus-within:border-red-600 focus-within:bg-red-600/5 ${isSearchExpanded ? 'w-full sm:w-64 md:w-80 px-4 h-10 shadow-[0_0_20px_rgba(229,9,20,0.1)]' : 'w-10 h-10 justify-center hover:bg-white/10'}`}>
             <Search 
-              className="w-4 h-4 sm:w-5 sm:h-5 cursor-pointer text-gray-400 flex-shrink-0" 
-              onClick={() => setIsSearchExpanded(!isSearchExpanded)} 
+              className={`w-4 h-4 sm:w-5 sm:h-5 cursor-pointer transition-colors ${isSearchExpanded ? 'text-zinc-500' : 'text-zinc-400 hover:text-white'}`} 
+              onClick={() => {
+                if (!isSearchExpanded) setIsSearchExpanded(true);
+              }} 
             />
             <input
               ref={searchInputRef}
               type="text"
               placeholder="Search movies..."
-              className={`bg-transparent border-none outline-none text-[11px] font-bold ml-2 sm:ml-3 w-full text-white placeholder:text-zinc-600 ${isSearchExpanded ? 'block' : 'hidden'}`}
+              className={`bg-transparent border-none outline-none text-[11px] font-bold ml-2 sm:ml-3 w-full text-white placeholder:text-zinc-600 focus:ring-0 ${isSearchExpanded ? 'block' : 'hidden'}`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onBlur={() => {
+                if (!searchQuery) setIsSearchExpanded(false);
+              }}
             />
             {isSearchExpanded && (
               <X 
@@ -908,6 +916,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'home' | 'myList' | 'movies' | 'series' | 'request' | 'profile' | 'requestUpgrade'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPlan, setSelectedPlan] = useState('Weekly (19 RS)');
+  const [activationCodeInput, setActivationCodeInput] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'telegram' | 'qr' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
@@ -915,6 +924,9 @@ export default function App() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userIp, setUserIp] = useState<string | null>(null);
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [isDeviceLimitReached, setIsDeviceLimitReached] = useState(false);
   const [systemSettings, setSystemSettings] = useState({ upiId: '', merchantName: 'Bharat Prime' });
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [selectedMovieForQuality, setSelectedMovieForQuality] = useState<Movie | null>(null);
@@ -925,7 +937,6 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [passwordUpdateSuccess, setPasswordUpdateSuccess] = useState(false);
-  const [userPendingRequest, setUserPendingRequest] = useState<any | null>(null);
 
   useEffect(() => {
     if (isAuthorized && currentUser?.userId) {
@@ -969,6 +980,13 @@ export default function App() {
 
         // Get user identifier (IP with fallback to LocalStorage ID)
         let identifier = '';
+        let devId = localStorage.getItem('bharat_prime_device_id');
+        if (!devId) {
+          devId = 'dev_' + Math.random().toString(36).substring(2, 15);
+          localStorage.setItem('bharat_prime_device_id', devId);
+        }
+        setDeviceId(devId);
+
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 2000); // 2s timeout
@@ -1004,12 +1022,31 @@ export default function App() {
             const userSnap = await getDoc(userRef);
             if (userSnap.exists()) {
               const userData = { ...userSnap.data(), userId: userSnap.id } as User;
-              // Check real-time expiry
-              if (userData.expiryDate && new Date(userData.expiryDate) < new Date()) {
-                setIsAuthorized(false);
-              } else {
-                setCurrentUser(userData);
-                setIsAuthorized(true);
+              setCurrentUser(userData);
+              setIsAuthorized(true);
+
+              // Register session
+              const sessionRef = doc(db, "user_sessions", `${userData.userId}_${devId}`);
+              await setDoc(sessionRef, {
+                userId: userData.userId,
+                deviceId: devId,
+                lastSeen: serverTimestamp(),
+                userAgent: navigator.userAgent,
+                ip: identifier || 'Unknown'
+              }, { merge: true });
+
+              // Check sessions count
+              const qSessions = query(collection(db, "user_sessions"), where("userId", "==", userData.userId));
+              const sessionsSnap = await getDocs(qSessions);
+              const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+              setActiveSessions(sessions);
+              
+              const plan = userData.planName || userData.plan || 'BASIC';
+              const limit = PLAN_LIMITS[plan] || 1;
+              const isThisDeviceActive = sessions.some(s => s.deviceId === devId);
+              
+              if (sessions.length > limit && !isThisDeviceActive) {
+                setIsDeviceLimitReached(true);
               }
             } else {
               setIsAuthorized(false);
@@ -1043,60 +1080,122 @@ export default function App() {
     init();
   }, []);
 
-  useEffect(() => {
-    if (isAuthorized && currentUser?.userId) {
-      const q = query(
-        collection(db, "upgradeRequests"), 
-        orderBy("timestamp", "desc")
-      );
-      const unsubscribeRequests = onSnapshot(q, (snap) => {
-        const pending = snap.docs
-          .map(d => ({ id: d.id, ...d.data() } as any))
-          .find(r => r.userId === currentUser.userId && r.status === 'pending');
-        setUserPendingRequest(pending || null);
-      });
-      return () => unsubscribeRequests();
-    }
-  }, [isAuthorized, currentUser?.userId]);
-
   const handlePlay = async (movie: Movie) => {
     // Check if plan is expired
-    if (currentUser?.expiryDate) {
-      const expiry = new Date(currentUser.expiryDate);
-      if (expiry < new Date()) {
+    if (currentUser?.userId) {
+      const expStr = currentUser?.expiryDate || (currentUser as any)?.expiry;
+      if (expStr) {
+        const expiry = new Date(expStr);
+        if (expiry < new Date()) {
+          setShowExpiryModal(true);
+          return;
+        }
+      } else {
         setShowExpiryModal(true);
         return;
       }
     } else if (!currentUser?.userId && isAuthorized) {
       // Basic guest check if applicable, but here users should have IDs
+      setShowExpiryModal(true);
+      return;
     }
 
     setSelectedMovieForQuality(movie);
   };
 
-  const handlePlanRequest = async (type: 'upgrade' | 'extension', data: any) => {
-    if (!currentUser?.userId) return;
-    if (systemSettings.upiId && !data.transactionId) {
-      alert("Please enter a valid Transaction ID correctly verify by admin");
+  const handleActivatePlan = async () => {
+    if (!currentUser?.userId || !activationCodeInput.trim()) {
+      alert("Please enter a valid Activation Code.");
       return;
     }
     setIsRequestingPlan(true);
 
     try {
-      const requestId = `${currentUser.userId}_${Date.now()}`;
-      await setDoc(doc(db, "upgradeRequests", requestId), {
-        userId: currentUser.userId,
-        userName: currentUser.name || currentUser.userId,
-        type,
-        ...data,
-        status: 'pending',
-        timestamp: serverTimestamp()
+      const trimmedCode = activationCodeInput.trim().toUpperCase();
+      let codeRef = doc(db, "activationCodes", trimmedCode);
+      let codeSnap = await getDoc(codeRef);
+      
+      let codeData = null;
+      if (!codeSnap.exists()) {
+        // Fallback: Query for the code field if ID fetch fails
+        const q = query(collection(db, "activationCodes"), where("code", "==", trimmedCode), limit(1));
+        const qSnap = await getDocs(q);
+        if (qSnap.empty) {
+          alert("Invalid Activation Code.");
+          setIsRequestingPlan(false);
+          return;
+        }
+        codeSnap = qSnap.docs[0];
+        codeRef = doc(db, "activationCodes", codeSnap.id);
+        codeData = codeSnap.data();
+      } else {
+        codeData = codeSnap.data();
+      }
+      
+      if (codeData.isUsed) {
+        alert("This Activation Code has already been used.");
+        setIsRequestingPlan(false);
+        return;
+      }
+
+      const codePlan = codeData.planName || codeData.plan;
+      if (codePlan !== selectedPlan) {
+        alert(`This Activation Code is for the ${codePlan} plan, but you selected ${selectedPlan}. Please select the correct plan before activating.`);
+        setIsRequestingPlan(false);
+        return;
+      }
+
+      // Valid code -> Apply upgrade
+      const planName = codePlan;
+      let daysToAdd = 7;
+      let price = '₹19';
+      if (planName.includes('Monthly')) { daysToAdd = 30; price = '₹55'; }
+      if (planName.includes('90')) { daysToAdd = 90; price = '₹149'; }
+
+      const currentExpiry = currentUser?.expiryDate ? new Date(currentUser.expiryDate) : new Date();
+      if (currentExpiry < new Date()) {
+        currentExpiry.setTime(new Date().getTime());
+      }
+      currentExpiry.setDate(currentExpiry.getDate() + daysToAdd);
+      const newExpiry = currentExpiry.toISOString().split('T')[0];
+
+      const userRef = doc(db, 'users', currentUser.userId);
+      await updateDoc(userRef, {
+        expiry: newExpiry,
+        expiryDate: newExpiry,
+        plan: planName,
+        planName: planName,
+        planPrice: price,
+        amount: price.replace(/\D/g, ''),
+        updatedAt: serverTimestamp()
       });
-      alert(`PAYMENT RECEIVED: Your transaction is now UNDER REVIEW. Please allow a few minutes to hours for verification. Your plan will be updated automatically upon approval.`);
+
+      await updateDoc(codeRef, {
+        isUsed: true,
+        usedBy: currentUser.userId,
+        usedAt: serverTimestamp()
+      });
+
+      alert(`Success! Plan activated: ${planName}`);
+      
+      // Refresh session limits
+      const qSessions = query(collection(db, "user_sessions"), where("userId", "==", currentUser.userId));
+      const sessionsSnap = await getDocs(qSessions);
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      setActiveSessions(sessions);
+      
+      const updatedLimit = PLAN_LIMITS[planName] || 1;
+      const isThisDeviceActive = sessions.some(s => s.deviceId === deviceId);
+      if (sessions.length <= updatedLimit || isThisDeviceActive) {
+        setIsDeviceLimitReached(false);
+      }
+
       setCurrentView('profile');
+      setActivationCodeInput('');
+      
     } catch (err) {
-      console.error("Error sending plan request:", err);
-      alert("Failed to send request. Please try again.");
+      console.error("Activation error:", err);
+      alert("Failed to activate code. Please try again.");
     } finally {
       setIsRequestingPlan(false);
     }
@@ -1122,12 +1221,38 @@ export default function App() {
   };
 
   const handleAuthorized = async (userData: User) => {
-    if (!userIp) return;
+    if (!userIp || !deviceId) return;
     
     try {
       if (!userData?.userId) {
         throw new Error('User Data is missing User ID');
       }
+
+      // Check current sessions count before allowing login
+      const qSessions = query(collection(db, "user_sessions"), where("userId", "==", userData.userId));
+      const sessionsSnap = await getDocs(qSessions);
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      
+      const plan = userData.planName || userData.plan || 'BASIC';
+      const limit = PLAN_LIMITS[plan] || 1;
+      const isThisDeviceActive = sessions.some(s => s.deviceId === deviceId);
+
+      if (sessions.length >= limit && !isThisDeviceActive) {
+        setIsDeviceLimitReached(true);
+        // We still set current user so they can manage sessions
+        setCurrentUser(userData);
+        return;
+      }
+
+      // Register session
+      const sessionRef = doc(db, "user_sessions", `${userData.userId}_${deviceId}`);
+      await setDoc(sessionRef, {
+        userId: userData.userId,
+        deviceId: deviceId,
+        lastSeen: serverTimestamp(),
+        userAgent: navigator.userAgent,
+        ip: userIp
+      }, { merge: true });
 
       await setDoc(doc(db, 'authorized_ips', userIp), { 
         authorized: true, 
@@ -1136,9 +1261,63 @@ export default function App() {
       });
       setCurrentUser(userData);
       setIsAuthorized(true);
+      setIsDeviceLimitReached(false);
     } catch (err) {
       console.error('Error saving authorization:', err);
+    }
+  };
+
+  const handleRemoveSession = async (sessionId: string) => {
+    try {
+      await deleteDoc(doc(db, "user_sessions", sessionId));
+      if (currentUser?.userId) {
+        const qSessions = query(collection(db, "user_sessions"), where("userId", "==", currentUser.userId));
+        const sessionsSnap = await getDocs(qSessions);
+        const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        setActiveSessions(sessions);
+        
+        const plan = currentUser.planName || currentUser.plan || 'BASIC';
+        const limit = PLAN_LIMITS[plan] || 1;
+        const isThisDeviceActive = sessions.some(s => s.deviceId === deviceId);
+        
+        if (sessions.length <= limit || isThisDeviceActive) {
+          setIsDeviceLimitReached(false);
+          if (sessionId.includes(deviceId)) {
+            handleLogout();
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Logout device failed:", err);
+    }
+  };
+
+  const handleResetDeviceLimit = async () => {
+    if (!currentUser?.userId) return;
+    try {
+      const qSessions = query(collection(db, "user_sessions"), where("userId", "==", currentUser.userId));
+      const sessionsSnap = await getDocs(qSessions);
+      const batch = writeBatch(db);
+      sessionsSnap.docs.forEach(d => {
+        batch.delete(d.ref);
+      });
+      await batch.commit();
+      
+      // After resetting, register THIS device again for a fresh start
+      const sessionRef = doc(db, "user_sessions", `${currentUser.userId}_${deviceId}`);
+      await setDoc(sessionRef, {
+        userId: currentUser.userId,
+        deviceId: deviceId,
+        lastSeen: serverTimestamp(),
+        userAgent: navigator.userAgent,
+        ip: userIp || 'Unknown'
+      });
+
+      setActiveSessions([{ id: `${currentUser.userId}_${deviceId}`, deviceId, userAgent: navigator.userAgent, ip: userIp || 'Unknown', lastSeen: { toDate: () => new Date() } }]);
+      setIsDeviceLimitReached(false);
       setIsAuthorized(true);
+    } catch (err) {
+      console.error("Reset device limit failed:", err);
     }
   };
 
@@ -1196,6 +1375,74 @@ export default function App() {
 
   if (isLoading && showSplash) return <SplashScreen onComplete={() => {}} />;
 
+  if (isDeviceLimitReached) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center p-6 text-white font-sans">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-zinc-950 p-8 sm:p-10 rounded-[3rem] border border-red-600/20 shadow-[0_30px_100px_rgba(229,9,20,0.15)] text-center relative overflow-hidden"
+        >
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-red-600 shadow-[0_0_20px_rgba(229,9,20,0.5)]"></div>
+          
+          <div className="w-20 h-20 bg-red-600/10 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-red-600/20">
+            <Lock size={40} className="text-red-600" />
+          </div>
+
+          <h2 className="text-2xl font-black mb-3 italic tracking-tighter uppercase text-white">Device Limit Reached</h2>
+          <p className="text-zinc-500 text-[9px] font-black uppercase tracking-[0.3em] mb-8 leading-relaxed max-w-[200px] mx-auto">
+            YOU NEED TO RESET YOUR DEVICE LIMIT TO CONTINUE
+          </p>
+
+          <div className="space-y-3 mb-8 text-left max-h-[300px] overflow-y-auto px-1 custom-scrollbar">
+            <div className="flex justify-between items-center px-1 mb-2">
+              <p className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">Active Sessions</p>
+              <span className="text-[7px] font-black text-red-600 uppercase tracking-widest cursor-pointer hover:text-red-400" onClick={handleResetDeviceLimit}>Logout All Devices</span>
+            </div>
+            {activeSessions.map((s, idx) => (
+              <div key={s.id} className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl flex items-center justify-between group hover:border-red-600/20 transition-all">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-zinc-900 rounded-xl group-hover:bg-red-600/10 transition-colors">
+                    {s.userAgent?.includes('Mobile') ? <Search size={12} className="text-zinc-500" /> : <Tv2 size={12} className="text-zinc-500" />}
+                  </div>
+                  <div>
+                    <h4 className="text-[9px] font-black uppercase tracking-widest text-zinc-200">
+                      {s.deviceId === deviceId ? 'This Device' : `Session ${idx + 1}`}
+                    </h4>
+                    <p className="text-[6px] font-black text-zinc-600 uppercase tracking-widest mt-0.5">
+                      {s.ip} • Registered: {s.lastSeen?.toDate ? s.lastSeen.toDate().toLocaleDateString() : 'Now'}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleRemoveSession(s.id)}
+                  className="p-2.5 bg-zinc-900 hover:bg-red-600 rounded-xl text-zinc-500 hover:text-white transition-all border border-white/5"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={handleResetDeviceLimit}
+              className="w-full bg-red-600 py-4 rounded-2xl font-black text-[9px] uppercase tracking-[0.4em] text-white hover:bg-red-700 transition-all shadow-lg shadow-red-600/20"
+            >
+              Reset Device Limit
+            </button>
+            <button 
+              onClick={handleLogout}
+              className="w-full bg-transparent border border-white/10 py-4 rounded-2xl font-black text-[9px] uppercase tracking-[0.4em] text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
+            >
+              Sign Out Account
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   const results = movies.filter(m => m.title?.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
@@ -1231,16 +1478,16 @@ export default function App() {
 
         <main className="pt-0">
         {currentView === 'profile' ? (
-          <div className="min-h-[80vh] flex items-center justify-center py-16 px-4">
+          <div className="min-h-screen pt-12 pb-24 px-4 w-full flex flex-col items-center">
             <motion.div 
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
-              className="w-full max-w-3xl bg-zinc-900/40 backdrop-blur-3xl border border-white/5 rounded-[2.5rem] overflow-hidden relative shadow-2xl"
+              className="w-full max-w-3xl bg-zinc-900/40 backdrop-blur-3xl border border-white/5 rounded-[2.5rem] overflow-hidden relative shadow-2xl my-auto"
             >
               <div className="absolute top-0 left-0 right-0 h-[200px] bg-gradient-to-b from-red-600/5 to-transparent pointer-events-none" />
               
               <div className="p-6 sm:p-8 md:p-12 relative z-10 flex flex-col items-center">
-                <div className="w-full flex justify-between items-center mb-6 px-2">
+                <div className="w-full flex justify-between items-center mb-10 px-2">
                   <button 
                     onClick={() => setCurrentView('home')}
                     className="flex items-center gap-2 text-zinc-600 hover:text-white transition-colors group font-black text-[9px] sm:text-[10px] uppercase tracking-[0.3em]"
@@ -1248,34 +1495,45 @@ export default function App() {
                     <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Return
                   </button>
                   <div className="flex items-center gap-2">
-                    <div className="w-1 h-1 bg-red-600 rounded-full animate-pulse" />
-                    <span className="text-[8px] sm:text-[9px] font-black text-zinc-600 uppercase tracking-[0.4em]">Elite Profile</span>
+                    <div className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse shadow-[0_0_10px_rgba(229,9,20,0.8)]" />
+                    <span className="text-[8px] sm:text-[9px] font-black text-zinc-600 uppercase tracking-[0.4em]">Elite Identity Center</span>
                   </div>
                 </div>
 
-                <div className="flex flex-col md:flex-row items-center gap-6 md:gap-8 w-full mb-8 md:mb-10">
-                  <div className="relative group">
-                    <div className="absolute -inset-2 bg-gradient-to-tr from-red-600 to-purple-600 rounded-2xl sm:rounded-[2rem] opacity-20 blur-xl group-hover:opacity-40 transition-opacity" />
-                    <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 bg-zinc-800 border-2 border-white/5 rounded-2xl sm:rounded-[2rem] flex items-center justify-center text-3xl sm:text-4xl md:text-5xl font-black text-red-600 shadow-2xl relative z-10">
-                      {currentUser?.userId?.charAt(0).toUpperCase() || 'U'}
+                <div className="flex flex-col md:flex-row items-center gap-6 md:gap-10 w-full mb-12">
+                  <div className="relative group cursor-pointer">
+                    <div className="absolute -inset-4 bg-gradient-to-tr from-red-600/30 via-red-600/10 to-transparent rounded-[2.5rem] blur-2xl opacity-40 group-hover:opacity-100 transition-opacity duration-1000" />
+                    <div className="w-24 h-24 sm:w-32 sm:h-32 bg-zinc-950 border border-white/5 rounded-[2.5rem] flex items-center justify-center relative z-10 overflow-hidden shadow-2xl transition-transform group-hover:scale-105 duration-500">
+                      <div className="absolute inset-0 bg-gradient-to-tr from-red-600/10 to-transparent" />
+                      <CircleUser size={56} className="text-zinc-700 group-hover:text-red-600 transition-colors duration-500" />
+                      <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-black/80 backdrop-blur-md flex items-center justify-center border-t border-white/5">
+                        <span className="text-[7px] font-black uppercase tracking-[0.3em] text-red-600">Premium</span>
+                      </div>
+                    </div>
+                    <div className="absolute -top-3 -right-3 bg-red-600 text-white text-[10px] font-black px-4 py-1.5 rounded-xl uppercase tracking-tighter shadow-[0_10px_30px_rgba(229,9,20,0.4)] z-20 transform rotate-12">
+                      Elite
                     </div>
                   </div>
 
                   <div className="text-center md:text-left">
-                    <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tighter uppercase italic mb-1 bg-gradient-to-r from-white via-white to-zinc-500 bg-clip-text text-transparent">
-                      {currentUser?.userId || 'USER'}
-                    </h2>
-                    {userPendingRequest && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse" />
-                        <p className="text-[7.5px] font-black text-yellow-500 uppercase tracking-[0.3em] flex items-center gap-1.5 bg-yellow-500/5 px-3 py-1 rounded-full border border-yellow-500/10 shadow-lg">
-                          Maintenance Mode: Upgrade Under Review
-                        </p>
+                    <div className="flex flex-col md:flex-row md:items-center gap-3 mb-2">
+                      <h2 className="text-3xl sm:text-4xl font-black text-white italic uppercase tracking-tighter leading-none">
+                        {currentUser?.name || 'Valued Member'}
+                      </h2>
+                      <div className="flex items-center justify-center md:justify-start gap-2">
+                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                        <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Active Now</span>
                       </div>
-                    )}
-                    <p className="text-zinc-600 font-black uppercase tracking-[0.3em] text-[8px] sm:text-[9px] px-4 md:px-0">
-                      {currentUser?.name || 'IDENTITY UNVERIFIED'} <span className="mx-1 opacity-20">|</span> ID: {currentUser?.userId?.toUpperCase()}
-                    </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
+                      <p className="text-zinc-600 font-black uppercase tracking-[0.4em] text-[10px]">
+                        ID: <span className="text-zinc-400">{currentUser?.userId?.toUpperCase()}</span>
+                      </p>
+                      <div className="flex items-center gap-2 bg-white/5 px-3 py-1 rounded-full border border-white/5">
+                        <ShieldCheck size={10} className="text-red-500" />
+                        <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest tracking-tighter">Identity Verified</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1303,10 +1561,10 @@ export default function App() {
                     </span>
                     <button 
                       onClick={() => setCurrentView('requestUpgrade')}
-                      disabled={isRequestingPlan || !!userPendingRequest}
+                      disabled={isRequestingPlan}
                       className="w-full bg-green-600 hover:bg-green-700 text-white font-black py-4 rounded-2xl text-[9px] uppercase tracking-widest transition-all shadow-[0_10px_30px_rgba(22,163,74,0.3)] active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                     >
-                      <Plus size={14} /> {userPendingRequest ? 'Upgrade Under Review' : 'Upgrade Membership'}
+                      <Plus size={14} /> Upgrade Membership
                     </button>
                   </div>
 
@@ -1321,8 +1579,79 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="w-full bg-black/40 border border-white/5 p-6 sm:p-8 rounded-[2rem] mb-6 md:mb-8">
-                   <div className="w-full">
+                  {currentUser?.userId === 'admin' && (
+                    <motion.button 
+                      whileHover={{ scale: 1.02 }}
+                      onClick={() => { setIsAdminOpen(true); setCurrentView('home'); }}
+                      className="w-full bg-red-600 py-6 rounded-[2rem] font-black text-[10px] uppercase tracking-[0.5em] text-white hover:bg-red-700 transition-all shadow-[0_20px_50px_rgba(229,9,20,0.3)] border border-red-500/20 flex items-center justify-center gap-4 mb-6 group"
+                    >
+                      <ShieldCheck size={20} className="fill-current group-hover:rotate-12 transition-transform" /> 
+                      Access Admin Command Center
+                    </motion.button>
+                  )}
+
+                  <div className="w-full bg-black/40 border border-white/5 p-6 sm:p-8 rounded-[2rem] mb-6 md:mb-8">
+                  <p className="text-[8px] font-black text-zinc-700 uppercase tracking-[0.4em] mb-8 text-center italic">Manage Profiles</p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 mb-10">
+                    <div className="flex flex-col items-center gap-3 group cursor-pointer">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 bg-red-600 rounded-2xl flex items-center justify-center border-2 border-red-600 group-hover:scale-110 transition-transform">
+                        <span className="text-xl font-black text-white italic">P1</span>
+                      </div>
+                      <span className="text-[7px] font-black uppercase tracking-widest text-white">Main</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-3 group cursor-pointer opacity-40 hover:opacity-100 transition-opacity">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 bg-zinc-800 rounded-2xl flex items-center justify-center border border-white/5 group-hover:scale-110 transition-transform">
+                        <span className="text-xl font-black text-zinc-600 italic">P2</span>
+                      </div>
+                      <span className="text-[7px] font-black uppercase tracking-widest text-zinc-500">Guest</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-3 group cursor-pointer opacity-40 hover:opacity-100 transition-opacity">
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 bg-zinc-950 border border-dashed border-zinc-800 rounded-2xl flex items-center justify-center group-hover:bg-zinc-900 transition-colors">
+                        <Plus size={16} className="text-zinc-700" />
+                      </div>
+                      <span className="text-[7px] font-black uppercase tracking-widest text-zinc-600">Add</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[8px] font-black text-zinc-700 uppercase tracking-[0.4em] mb-6 text-center italic">— ACTIVE SESSION HISTORY —</p>
+                  <div className="space-y-4">
+                    {activeSessions.map((s, idx) => (
+                      <div key={s.id} className={`bg-black/40 border ${s.deviceId === deviceId ? 'border-red-600/50 shadow-[0_0_20px_rgba(229,9,20,0.05)]' : 'border-white/5'} p-4 rounded-2xl flex items-center justify-between group transition-all`}>
+                        <div className="flex items-center gap-4">
+                          <div className={`p-3 rounded-xl ${s.deviceId === deviceId ? 'bg-red-600/10 text-red-600' : 'bg-zinc-900 text-zinc-500'}`}>
+                            {s.userAgent?.includes('Mobile') ? <Search size={14} /> : <Tv2 size={14} />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className={`text-[10px] font-black uppercase tracking-widest ${s.deviceId === deviceId ? 'text-white' : 'text-zinc-400'}`}>
+                                {s.deviceId === deviceId ? 'Current Session' : `Active Device ${idx + 1}`}
+                              </h4>
+                              {s.deviceId === deviceId && <span className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse shadow-[0_0_8px_rgba(229,9,20,0.5)]"></span>}
+                            </div>
+                            <p className="text-[7px] font-black text-zinc-600 uppercase tracking-widest mt-1">
+                              ID: {s.deviceId.slice(-6).toUpperCase()} • {s.ip}
+                            </p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleRemoveSession(s.id)}
+                          className={`text-[7px] font-black uppercase tracking-widest border px-3 py-2 rounded-lg transition-all ${s.deviceId === deviceId ? 'border-red-600 text-red-600 hover:bg-red-600 hover:text-white' : 'border-white/5 text-zinc-600 hover:text-red-500 hover:border-red-600/20 hover:bg-red-600/5'}`}
+                        >
+                          {s.deviceId === deviceId ? 'Logout Session' : 'Logout Device'}
+                        </button>
+                      </div>
+                    ))}
+                    {activeSessions.length > 1 && (
+                      <button 
+                        onClick={handleResetDeviceLimit}
+                        className="w-full py-4 text-[8px] font-black uppercase tracking-[0.4em] text-zinc-600 hover:text-red-600 transition-colors"
+                      >
+                        — Logout All Other Devices —
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mt-8 pt-8 border-t border-white/5">
                     <div>
                       <p className="text-[8px] font-black text-zinc-700 uppercase tracking-[0.4em] mb-6 text-center italic">MEMBER ACCOUNT SECRETS</p>
                       <div className="grid sm:grid-cols-2 gap-4">
@@ -1495,81 +1824,84 @@ export default function App() {
             )}
           </div>
         ) : currentView === 'requestUpgrade' ? (
-          <div className="pb-20 pt-16 px-4 max-w-2xl mx-auto text-center">
+          <div className="pb-20 pt-16 sm:pt-24 px-4 max-w-2xl mx-auto flex flex-col items-center">
              <button 
               onClick={() => setCurrentView('profile')}
-              className="p-3 bg-white/5 hover:bg-red-600 rounded-full text-white transition-all border border-white/10 mb-8 self-start"
+              className="p-3 bg-white/5 hover:bg-red-600 rounded-full text-white transition-all border border-white/10 mb-8 self-center sm:self-start flex-shrink-0"
             >
               <ChevronLeft size={24} />
             </button>
-            <div className="bg-zinc-900 p-8 rounded-3xl border border-white/10 shadow-2xl relative overflow-hidden">
-              {userPendingRequest ? (
-                <div className="py-12 px-6">
-                  <div className="w-20 h-20 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-8 border border-yellow-500/20">
-                    <Clock size={40} className="text-yellow-500 animate-pulse" />
-                  </div>
-                  <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter mb-4">Transaction Under Review</h2>
-                  <div className="bg-white/5 p-6 rounded-2xl border border-white/5 mb-8">
-                    <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest leading-relaxed">
-                      Your request for <span className="text-white italic">{userPendingRequest.planName}</span> is being verified by our finance team.
-                    </p>
-                    <div className="mt-4 pt-4 border-t border-white/5 flex flex-col gap-2">
-                       <p className="text-[8px] text-zinc-500 uppercase font-bold tracking-widest">UTR: {userPendingRequest.transactionId}</p>
-                       <p className="text-[8px] text-zinc-600 uppercase font-bold tracking-widest">Submitted: {userPendingRequest.timestamp?.toDate().toLocaleString()}</p>
-                    </div>
-                  </div>
-                  <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-[0.2em] italic mb-8 max-w-xs mx-auto">
-                    * Verification usually takes 15-60 minutes. Your plan will activate automatically.
-                  </p>
-                  <button 
-                    onClick={() => setCurrentView('home')}
-                    className="w-full bg-zinc-800 hover:bg-zinc-700 py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all text-zinc-400"
-                  >
-                    Return Home
-                  </button>
-                </div>
-              ) : (
-                <>
+            <div className="bg-zinc-900 w-full p-6 sm:p-8 rounded-3xl border border-white/10 shadow-2xl relative overflow-hidden text-center">
                   <ShieldCheck className="mx-auto text-green-500 mb-4" size={48} />
-                  <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter mb-2">Upgrade Membership</h2>
-                  <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-8">Select your target plan</p>
+                  <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter mb-2">Activate Membership</h2>
+                  <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-8">Select your target plan and enter activation code</p>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-10 opacity-50 pointer-events-none grayscale">
-                    {['Weekly (19 RS)', 'Monthly (55 RS)', '90 Days (149 RS)'].map(plan => (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 text-left">
+                    {[
+                      { name: 'Weekly (19 RS)', shortInfo: '7 Days Validity', price: '₹19', label: null },
+                      { name: 'Monthly (55 RS)', shortInfo: '30 Days Validity', price: '₹55', label: 'Popular' },
+                      { name: '90 Days (149 RS)', shortInfo: '90 Days Validity', price: '₹149', label: 'Best Value' }
+                    ].map(plan => (
                       <button
-                        key={plan}
-                        className={`p-6 rounded-2xl border-2 transition-all text-left ${selectedPlan === plan ? 'border-green-600 bg-green-600/10' : 'border-white/5 bg-black/20 hover:border-white/20'}`}
+                        key={plan.name}
+                        onClick={() => setSelectedPlan(plan.name)}
+                        className={`p-5 rounded-2xl border-2 transition-all relative ${selectedPlan === plan.name ? 'border-[#229ED9] bg-[#229ED9]/10' : 'border-white/5 bg-black/20 hover:border-white/20'}`}
                       >
-                        <h3 className="font-black text-white italic uppercase tracking-tighter text-lg">{plan}</h3>
-                        <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest mt-1">
-                          {plan.includes('Weekly') ? 'Full Access • 1 Seat' : plan.includes('Monthly') ? 'Ultra HD • 2 Seats' : 'Family HD • 4 Seats'}
-                        </p>
+                        {plan.label && (
+                          <div className={`absolute -top-3 left-1/2 -translate-x-1/2 text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${selectedPlan === plan.name ? 'bg-[#229ED9]' : 'bg-zinc-600'}`}>{plan.label}</div>
+                        )}
+                        <h4 className="font-black text-white italic tracking-tighter mb-1 text-sm">{plan.name.split(' ')[0]}</h4>
+                        <div className="text-xl font-black text-white mb-2">{plan.price}</div>
+                        <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest leading-relaxed">{plan.shortInfo}</p>
                       </button>
                     ))}
                   </div>
+                  
+                  <div className="bg-[#229ED9]/5 border border-[#229ED9]/20 rounded-2xl p-6 mb-10 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="p-3 bg-[#229ED9]/20 rounded-xl"><Send size={24} className="text-[#229ED9]" /></div>
+                      <h3 className="font-black text-white text-xs uppercase tracking-widest">Instant Activation for {selectedPlan.split(' ')[0]}</h3>
+                      <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest leading-relaxed max-w-[200px]">
+                        Submit your Activation Code below and your plan will be updated instantly.
+                      </p>
+                    </div>
 
-                  <div className="bg-red-600/5 border border-red-600/20 rounded-2xl p-8 mb-10 text-center">
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="p-4 bg-red-600/20 rounded-full animate-pulse">
-                        <AlertTriangle size={32} className="text-red-500" />
-                      </div>
-                      <div>
-                        <h3 className="font-black text-white text-xs uppercase tracking-[0.3em] mb-2 text-red-500">System Maintenance</h3>
-                        <p className="text-[9px] text-zinc-400 font-bold uppercase tracking-widest leading-relaxed max-w-[280px] mx-auto">
-                          Our automated upgrade matrix is currently undergoing synchronization. Online upgrades are temporarily unavailable.
-                        </p>
+                    <div className="space-y-4 mt-6">
+                      <div className="relative group">
+                        <input 
+                          type="text" 
+                          value={activationCodeInput}
+                          onChange={(e) => setActivationCodeInput(e.target.value)}
+                          placeholder="ENTER ACTIVATION CODE"
+                          className="w-full bg-black/40 border border-white/10 rounded-xl py-4 px-6 text-[10px] font-black text-white text-center focus:border-[#229ED9] outline-none transition-all placeholder:text-zinc-700 tracking-widest"
+                        />
                       </div>
                     </div>
                   </div>
 
                   <button 
-                    onClick={() => window.open(`https://t.me/primebharath1`, '_blank')}
-                    className="w-full bg-white/5 hover:bg-white/10 border border-white/10 py-4 h-14 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-3 text-white"
+                    onClick={handleActivatePlan}
+                    disabled={isRequestingPlan || !activationCodeInput.trim()}
+                    className="w-full bg-green-600 hover:bg-green-700 py-4 h-14 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all disabled:opacity-50 shadow-[0_10px_30px_rgba(22,163,74,0.3)] active:scale-95 flex items-center justify-center gap-3 text-white"
                   >
-                    <Send size={18} className="text-[#229ED9]" /> Contact Admin for Activation
+                    {isRequestingPlan ? 'Activating...' : (
+                      <>
+                        <ShieldCheck size={18} /> Activate Plan
+                      </>
+                    )}
                   </button>
-                </>
-              )}
+
+                  <div className="mt-8 pt-8 border-t border-white/5">
+                    <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-widest mb-4">
+                      Don't have an activation code?
+                    </p>
+                    <button 
+                      onClick={() => window.open(`https://t.me/primebharath1`, '_blank')}
+                      className="w-full bg-white/5 hover:bg-white/10 border border-white/10 py-4 h-14 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] transition-all flex items-center justify-center gap-3 text-white"
+                    >
+                      <Send size={18} className="text-[#229ED9]" /> Contact Admin to Purchase
+                    </button>
+                  </div>
             </div>
           </div>
         ) : currentView === 'movies' ? (
@@ -1755,10 +2087,10 @@ export default function App() {
               <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-8 leading-relaxed">You need to buy the member plan after you can watch it.</p>
               <div className="space-y-3">
                 <button 
-                  onClick={() => { setShowExpiryModal(false); setCurrentView('profile'); }} 
+                  onClick={() => { setShowExpiryModal(false); setCurrentView('requestUpgrade'); }} 
                   className="w-full bg-red-600 py-4 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-600/20"
                 >
-                  Go to Profile
+                  Renew Plan
                 </button>
                 <button 
                   onClick={() => setShowExpiryModal(false)} 
