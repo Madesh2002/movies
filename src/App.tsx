@@ -956,11 +956,14 @@ export default function App() {
         const unsubscribe = onSnapshot(q, (snap) => {
           const list = snap.docs.map(d => {
             const data = d.data();
+            const links = Array.isArray(data.links) ? data.links : [];
+            const firstLinkUrl = links.length > 0 ? (typeof links[0] === 'object' ? links[0].url : links[0]) : '';
+            
             return { 
               id: d.id, 
               ...data,
               thumbnail: data.thumbnail || data.image || '',
-              videoUrl: data.videoUrl || data.link || '',
+              videoUrl: data.videoUrl || data.link || firstLinkUrl || '',
               backdrop: data.backdrop || data.thumbnail || data.image || ''
             } as Movie;
           });
@@ -1202,7 +1205,16 @@ export default function App() {
   };
 
   const handleQualitySelect = (movie: Movie, url: string) => {
-    const finalUrl = url.startsWith('http') ? url : `https://${url}`;
+    if (!url || typeof url !== 'string' || url === 'undefined') {
+      alert("No valid streaming link found for this quality.");
+      return;
+    }
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      alert("No valid streaming link found for this quality.");
+      return;
+    }
+    const finalUrl = trimmedUrl.startsWith('http') ? trimmedUrl : `https://${trimmedUrl}`;
     setPlayingMovie({ movie, url: finalUrl });
     setSelectedMovieForQuality(null);
   };

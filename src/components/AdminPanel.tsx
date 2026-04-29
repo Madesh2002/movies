@@ -403,9 +403,11 @@ export default function AdminPanel({
   };
 
   const addLinkRow = () => {
+    const defaultLabels = ['1.4 GB', '900 MB', '700 MB', '400 MB', '360p', '480p', '1080p'];
+    const nextLabel = defaultLabels[formData.links.length] || '';
     setFormData({
       ...formData,
-      links: [...formData.links, { label: '', url: '' }]
+      links: [...formData.links, { label: nextLabel, url: '' }]
     });
   };
 
@@ -422,7 +424,9 @@ export default function AdminPanel({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const validLinks = formData.links.filter(l => l.url);
+    const validLinks = formData.links
+      .map(l => ({ ...l, url: l.url.trim() }))
+      .filter(l => l.url && l.url !== 'undefined');
 
     if (!formData.title || !formData.image) {
       toast.error("Title and Image URL are required");

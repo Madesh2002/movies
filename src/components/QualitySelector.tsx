@@ -12,15 +12,22 @@ interface QualitySelectorProps {
 export default function QualitySelector({ movie, onClose, onSelect }: QualitySelectorProps) {
   if (!movie) return null;
 
-  const qualities = movie.links && movie.links.length > 0 
-    ? movie.links 
-    : [
-        { label: '1.4 GB', url: movie.videoUrl },
-        { label: '700 MB', url: movie.videoUrl },
-        { label: '400 MB', url: movie.videoUrl }
-      ];
+  const defaultLabels = ['1.4 GB', '900 MB', '700 MB', '400 MB', '300 MB'];
+  const qualities = movie.links && Array.isArray(movie.links) && movie.links.length > 0 
+    ? movie.links.map((link: any, idx: number) => {
+        const isObj = typeof link === 'object' && link !== null;
+        let url = isObj ? (link.url || link.link || link.videoUrl) : link;
+        
+        // Final fallback to movie.videoUrl if link doesn't have one
+        if (!url || url === 'undefined') url = movie.videoUrl;
+        
+        const label = (isObj ? link.label : '') || defaultLabels[idx] || `Quality ${idx + 1}`;
+        return { label, url };
+      }).filter(q => q.url && q.url !== 'undefined')
+    : defaultLabels.slice(0, 3).map(label => ({ label, url: movie.videoUrl })).filter(q => q.url && q.url !== 'undefined');
 
   const handleDownload = (url: string, label: string) => {
+    if (!url) return;
     const finalUrl = url.startsWith('http') ? url : `https://${url}`;
     const a = document.createElement('a');
     a.href = finalUrl;
@@ -42,6 +49,7 @@ export default function QualitySelector({ movie, onClose, onSelect }: QualitySel
         onClick={onClose}
       >
         <motion.div
+          key={movie.id}
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -55,9 +63,9 @@ export default function QualitySelector({ movie, onClose, onSelect }: QualitySel
             </div>
             
             <div className="space-y-3">
-              {qualities.map((q) => (
+              {qualities.map((q, idx) => (
                 <button
-                  key={q.label}
+                  key={`${movie.id}-q-${idx}`}
                   onClick={() => onSelect(movie, q.url)}
                   className="w-full flex items-center justify-between bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-red-600/50 transition-all p-5 rounded-2xl group relative overflow-hidden"
                 >

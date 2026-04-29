@@ -1019,32 +1019,31 @@ export default function VideoPlayer({ movie, selectedUrl, onClose }: VideoPlayer
                     </AnimatePresence>
 
                     {/* Preview Thumbnail */}
-                    <AnimatePresence>
-                      {previewTime !== null && (
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.8, y: -20, x: '-50%' }}
-                          animate={{ opacity: 1, scale: 1, y: -100, x: '-50%' }}
-                          exit={{ opacity: 0, scale: 0.8, y: -20 }}
-                          className="absolute z-50 pointer-events-none"
-                          style={{ left: `${previewPos}%` }}
-                        >
-                          <div className="relative group">
-                            <div className="w-40 sm:w-56 aspect-video bg-zinc-900 rounded-xl overflow-hidden border-2 border-red-600 shadow-2xl flex flex-col">
-                              <video 
-                                ref={previewVideoRef}
-                                muted
-                                className="w-full h-full object-cover opacity-80"
-                              />
-                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                                <p className="text-white font-mono text-[10px] text-center">{formatTime(previewTime)}</p>
-                              </div>
-                            </div>
-                            {/* Marker point */}
-                            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 bg-red-600 rotate-45" />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8, y: -20, x: '-50%' }}
+                      animate={previewTime !== null ? { opacity: 1, scale: 1, y: -100, x: '-50%' } : { opacity: 0, scale: 0.8, y: -20, x: '-50%' }}
+                      transition={{ duration: 0.2 }}
+                      className="absolute z-50 pointer-events-none"
+                      style={{ 
+                        left: `${Math.max(10, Math.min(90, previewPos))}%`,
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      <div className="relative group">
+                        <div className="w-40 sm:w-56 aspect-video bg-zinc-900 rounded-xl overflow-hidden border-2 border-red-600 shadow-2xl flex flex-col">
+                          <video 
+                            ref={previewVideoRef}
+                            muted
+                            className="w-full h-full object-cover opacity-80"
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                            <p className="text-white font-mono text-[10px] text-center">{formatTime(previewTime || 0)}</p>
                           </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                        </div>
+                        {/* Marker point */}
+                        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 bg-red-600 rotate-45" />
+                      </div>
+                    </motion.div>
 
                     <input 
                       type="range"
