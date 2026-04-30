@@ -1817,7 +1817,7 @@ export default function App() {
                 ))}
               </div>
             ) : (
-              ['Kannada', 'Hindi', 'Telugu', 'Tamil'].map((lang) => {
+              ['Kannada', 'Hindi', 'Telugu', 'Tamil', 'Malayalam', 'English'].map((lang) => {
                 const langSeries = movies.filter(m => m.category === 'Series' && m.language === lang);
                 if (langSeries.length === 0) return null;
                 return (
@@ -1956,7 +1956,7 @@ export default function App() {
                 ))}
               </div>
             ) : (
-              ['Kannada', 'Hindi', 'Telugu', 'Tamil'].map((lang) => {
+              ['Kannada', 'Hindi', 'Telugu', 'Tamil', 'Malayalam', 'English'].map((lang) => {
                 const langMovies = movies.filter(m => m.category === 'Movie' && m.language === lang);
                 if (langMovies.length === 0) return null;
                 return (
@@ -2045,7 +2045,7 @@ export default function App() {
               <>
                 <HeroBanner movies={movies} onPlay={handlePlay} />
                 <div className="pb-20 mt-4 sm:mt-8">
-                  {['Kannada', 'Hindi', 'Telugu', 'Tamil'].map((lang) => {
+                  {['Kannada', 'Hindi', 'Telugu', 'Tamil', 'Malayalam', 'English'].map((lang) => {
                   const langMovies = movies.filter(m => m.category === 'Movie' && m.language === lang);
                   if (langMovies.length === 0) return null;
                   return (
@@ -2068,7 +2068,7 @@ export default function App() {
         )}
       </main>
 
-      {currentView !== 'profile' && currentView !== 'requestUpgrade' && <Footer />}
+      {currentView === 'home' && !selectedCategory && !searchQuery && <Footer />}
 
       <AnimatePresence>
         {isAdminOpen && (
