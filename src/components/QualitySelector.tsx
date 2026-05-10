@@ -21,7 +21,7 @@ export default function QualitySelector({ movie, onClose, onSelect }: QualitySel
         // Final fallback to movie.videoUrl if link doesn't have one
         if (!url || url === 'undefined') url = movie.videoUrl;
         
-        const label = (isObj ? link.label : '') || defaultLabels[idx] || `Quality ${idx + 1}`;
+        const label = (isObj ? (link.label || link.quality) : '') || defaultLabels[idx] || `Quality ${idx + 1}`;
         return { label, url };
       }).filter(q => q.url && q.url !== 'undefined')
     : defaultLabels.slice(0, 3).map(label => ({ label, url: movie.videoUrl })).filter(q => q.url && q.url !== 'undefined');

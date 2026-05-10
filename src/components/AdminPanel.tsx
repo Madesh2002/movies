@@ -474,7 +474,9 @@ export default function AdminPanel({
       image: movie.image || '',
       category: movie.category || 'Movie',
       language: movie.language || 'Kannada',
-      links: movie.links && movie.links.length > 0 ? movie.links : [{ label: '720p', url: '' }]
+      links: movie.links && movie.links.length > 0 
+        ? movie.links.map((l: any) => ({ label: l.label || l.quality || '', url: l.url || l.link || l.videoUrl || '' }))
+        : [{ label: '720p', url: '' }]
     });
     setActiveView('upload');
   };
