@@ -66,7 +66,7 @@ const LoginGate = ({ onAuthorized, systemSettings }: { onAuthorized: (userData: 
   const [error, setError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [registerData, setRegisterData] = useState({ name: '', userId: '', password: '', plan: 'Weekly (19 RS)' });
+  const [registerData, setRegisterData] = useState({ name: '', userId: '', password: '', activationKey: '' });
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,7 +111,7 @@ const LoginGate = ({ onAuthorized, systemSettings }: { onAuthorized: (userData: 
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!registerData.name || !registerData.userId || !registerData.password) {
+    if (!registerData.name || !registerData.userId || !registerData.password || !registerData.activationKey) {
       setError('All fields are required');
       return;
     }
@@ -120,31 +120,74 @@ const LoginGate = ({ onAuthorized, systemSettings }: { onAuthorized: (userData: 
     setError('');
     
     try {
-      // Check if ID already exists in users or requests
+      // Check if ID already exists in users
       const userSnap = await getDoc(doc(db, "users", registerData.userId.trim()));
-      const regSnap = await getDoc(doc(db, "registrationRequests", registerData.userId.trim()));
       
-      if (userSnap.exists() || regSnap.exists()) {
+      if (userSnap.exists()) {
         setError('This User ID is already taken.');
         setIsVerifying(false);
         return;
       }
+      
+      // Check if Activation Key is valid and unused
+      const codesRef = collection(db, "activationCodes");
+      const qCode = query(codesRef, where("code", "==", registerData.activationKey.trim()));
+      const codesSnap = await getDocs(qCode);
 
-      await setDoc(doc(db, "registrationRequests", registerData.userId.trim()), {
-        ...registerData,
-        status: 'pending',
-        timestamp: serverTimestamp()
+      if (codesSnap.empty) {
+        setError('Invalid activation key.');
+        setIsVerifying(false);
+        return;
+      }
+
+      const codeDoc = codesSnap.docs[0];
+      const codeData = codeDoc.data();
+
+      if (codeData.isUsed || codeData.status === 'used') {
+        setError('This activation key has already been used.');
+        setIsVerifying(false);
+        return;
+      }
+
+      const planString = codeData.plan || '';
+      const days = planString.includes("Weekly") ? 7 : planString.includes("Monthly") ? 30 : 90;
+      const exp = new Date(); 
+      exp.setDate(exp.getDate() + days);
+      const startD = new Date().toISOString().split('T')[0];
+      const expD = exp.toISOString().split('T')[0];
+      const amountStr = planString.match(/\d+/);
+      const amount = amountStr ? parseInt(amountStr[0]) : 0;
+
+      const newUserData = {
+        name: registerData.name, 
+        password: registerData.password, 
+        plan: codeData.plan, 
+        startDate: startD, 
+        expiry: expD, 
+        amount: amount, 
+        updatedAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, "users", registerData.userId.trim()), {
+        ...newUserData,
+        updatedAt: serverTimestamp() // Overwrite immediately with server timestamp in DB
+      });
+
+      // Update code status
+      await updateDoc(doc(db, "activationCodes", codeDoc.id), {
+        status: 'used',
+        isUsed: true,
+        usedBy: registerData.userId.trim(),
+        usedAt: serverTimestamp()
       });
       
-      setError('Request sent! Please wait for admin approval.');
-      setRegisterData({ name: '', userId: '', password: '', plan: 'Weekly (19 RS)' });
+      setError('Account created successfully! Logging you in...');
       setTimeout(() => {
-        setIsRegistering(false);
-        setError('');
-      }, 3000);
+        onAuthorized({ ...newUserData, userId: registerData.userId.trim() });
+      }, 1500);
     } catch (err) {
       console.error('Registration error:', err);
-      setError('Failed to send request. Try again.');
+      setError('Failed to create account. Try again.');
     } finally {
       setIsVerifying(false);
     }
@@ -252,23 +295,18 @@ const LoginGate = ({ onAuthorized, systemSettings }: { onAuthorized: (userData: 
           {isRegistering && (
             <motion.div variants={itemVariants} className="space-y-1">
               <div className="flex items-center justify-between px-1">
-                <label className="text-[7px] font-black text-zinc-600 uppercase tracking-[0.4em]">Subscription Plan</label>
-                <Calendar className="w-2 h-2 text-red-600/30" />
+                <label className="text-[7px] font-black text-zinc-600 uppercase tracking-[0.4em]">Activation Key</label>
+                <Lock className="w-2 h-2 text-red-600/30" />
               </div>
               <div className="relative group">
                 <div className="absolute inset-0 bg-red-600/5 rounded-lg blur-md group-focus-within:bg-red-600/10 transition-all opacity-0 group-focus-within:opacity-100" />
-                <select 
-                  value={registerData.plan}
-                  onChange={(e) => setRegisterData({...registerData, plan: e.target.value})}
-                  className="relative w-full bg-black/40 border border-white/5 rounded-lg py-2.5 px-4 text-[10px] font-black focus:border-red-600 focus:bg-[#0a0a0a] outline-none transition-all text-white appearance-none cursor-pointer"
-                >
-                  <option value="Weekly (19 RS)" className="bg-[#0a0a0a] text-white">Weekly (19 RS)</option>
-                  <option value="Monthly (55 RS)" className="bg-[#0a0a0a] text-white">Monthly (55 RS)</option>
-                  <option value="90 Days (149 RS)" className="bg-[#0a0a0a] text-white">90 Days (149 RS)</option>
-                </select>
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <ChevronRight size={10} className="text-zinc-600 rotate-90" />
-                </div>
+                <input 
+                  type="text" 
+                  value={registerData.activationKey}
+                  onChange={(e) => setRegisterData({...registerData, activationKey: e.target.value})}
+                  placeholder="BP-XXXX-XXXX"
+                  className="relative w-full bg-black/40 border border-white/5 rounded-lg py-2 px-4 text-xs font-black focus:border-red-600 focus:bg-black/60 outline-none transition-all placeholder:text-zinc-800 text-white"
+                />
               </div>
             </motion.div>
           )}
@@ -299,7 +337,7 @@ const LoginGate = ({ onAuthorized, systemSettings }: { onAuthorized: (userData: 
                 <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <span className="text-[9px] font-bold">{isRegistering ? 'Submit Request' : 'Access Content'}</span>
+                  <span className="text-[9px] font-bold">{isRegistering ? 'Create Account' : 'Access Content'}</span>
                   <Play className="w-3 h-3 fill-current" />
                 </>
               )}
@@ -481,7 +519,11 @@ const Navbar = ({
                 }} 
                 className={`transition-all duration-300 relative group flex items-center gap-2 px-1 py-2 whitespace-nowrap ${item.name === 'Profile' ? 'bg-zinc-800/40 hover:bg-zinc-800/80 px-5 py-2 rounded-full border border-white/10 hover:border-red-600/50 ml-2 shadow-xl ring-1 ring-white/5' : 'text-zinc-400 hover:text-white'}`}
               >
-                <item.icon size={14} className={`${item.name === 'Profile' ? 'text-red-500' : 'text-zinc-500 group-hover:text-red-500'} transition-colors`} />
+                {item.name === 'Profile' && currentUser?.profileImage ? (
+                  <img src={currentUser.profileImage} alt="Profile" className="w-5 h-5 rounded-full object-cover border border-red-500 shadow-[0_0_10px_rgba(229,9,20,0.3)]" />
+                ) : (
+                  <item.icon size={14} className={`${item.name === 'Profile' ? 'text-red-500' : 'text-zinc-500 group-hover:text-red-500'} transition-colors`} />
+                )}
                 <span className="truncate">{item.name}</span>
                 {item.name === 'My List' && myListCount > 0 && (
                   <span className="bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded-full min-w-[16px] h-[16px] flex items-center justify-center font-black animate-bounce">
@@ -579,7 +621,11 @@ const Navbar = ({
                     className={`w-full py-4 rounded-2xl transition-all duration-300 uppercase tracking-tighter flex items-center justify-between px-6 ${item.name === 'Profile' ? 'bg-red-600 text-white shadow-2xl' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}
                   >
                     <div className="flex items-center gap-4">
-                      <item.icon size={24} className={item.name === 'Profile' ? 'text-white' : 'text-red-600'} />
+                      {item.name === 'Profile' && currentUser?.profileImage ? (
+                        <img src={currentUser.profileImage} alt="Profile" className="w-8 h-8 rounded-full object-cover border-2 border-white shadow-lg" />
+                      ) : (
+                        <item.icon size={24} className={item.name === 'Profile' ? 'text-white' : 'text-red-600'} />
+                      )}
                       <span className="text-2xl font-black">{item.name}</span>
                     </div>
                     {item.name === 'Profile' && (
@@ -937,6 +983,68 @@ export default function App() {
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [passwordUpdateSuccess, setPasswordUpdateSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleProfileImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser?.userId) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('File size must be less than 2MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const imgInfo = new Image();
+      imgInfo.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 300;
+        const MAX_HEIGHT = 300;
+        let width = imgInfo.width;
+        let height = imgInfo.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(imgInfo, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          
+          try {
+            await updateDoc(doc(db, "users", currentUser.userId), {
+              profileImage: dataUrl
+            });
+            setCurrentUser({...currentUser, profileImage: dataUrl});
+          } catch (err) {
+            console.error("Error updating image", err);
+            alert("Failed to save profile picture");
+          }
+        }
+      };
+      if (event.target?.result) {
+        imgInfo.src = event.target.result as string;
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (isAuthorized && currentUser?.userId) {
@@ -1513,16 +1621,32 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col md:flex-row items-center gap-6 md:gap-10 w-full mb-12">
-                  <div className="relative group cursor-pointer">
+                  <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      ref={fileInputRef}
+                      onChange={handleProfileImageUpload}
+                      className="hidden" 
+                    />
                     <div className="absolute -inset-4 bg-gradient-to-tr from-red-600/30 via-red-600/10 to-transparent rounded-[2.5rem] blur-2xl opacity-40 group-hover:opacity-100 transition-opacity duration-1000" />
                     <div className="w-24 h-24 sm:w-32 sm:h-32 bg-zinc-950 border border-white/5 rounded-[2.5rem] flex items-center justify-center relative z-10 overflow-hidden shadow-2xl transition-transform group-hover:scale-105 duration-500">
                       <div className="absolute inset-0 bg-gradient-to-tr from-red-600/10 to-transparent" />
-                      <CircleUser size={56} className="text-zinc-700 group-hover:text-red-600 transition-colors duration-500" />
-                      <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-black/80 backdrop-blur-md flex items-center justify-center border-t border-white/5">
+                      {currentUser?.profileImage ? (
+                        <img src={currentUser.profileImage} alt="Profile" className="w-full h-full object-cover relative z-10" />
+                      ) : (
+                        <CircleUser size={56} className="text-zinc-700 group-hover:text-red-600 transition-colors duration-500 relative z-10" />
+                      )}
+                      
+                      <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-black/80 backdrop-blur-md flex items-center justify-center border-t border-white/5 z-20">
                         <span className="text-[7px] font-black uppercase tracking-[0.3em] text-red-600">Premium</span>
                       </div>
+                      
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-30 backdrop-blur-sm">
+                        <span className="text-[8px] font-black text-white uppercase tracking-widest flex items-center gap-1.5"><Plus size={10} /> Change</span>
+                      </div>
                     </div>
-                    <div className="absolute -top-3 -right-3 bg-red-600 text-white text-[10px] font-black px-4 py-1.5 rounded-xl uppercase tracking-tighter shadow-[0_10px_30px_rgba(229,9,20,0.4)] z-20 transform rotate-12">
+                    <div className="absolute -top-3 -right-3 bg-red-600 text-white text-[10px] font-black px-4 py-1.5 rounded-xl uppercase tracking-tighter shadow-[0_10px_30px_rgba(229,9,20,0.4)] z-40 transform rotate-12 pointer-events-none">
                       Elite
                     </div>
                   </div>
@@ -1568,8 +1692,14 @@ export default function App() {
                         </p>
                       </div>
                     </div>
-                    <span className="text-[8px] font-black text-green-500 uppercase tracking-[0.4em] mt-6 flex items-center gap-2 mb-6">
-                       <ShieldCheck size={10} className="text-green-500" /> STATUS: ACTIVE
+                    <span className={`text-[8px] font-black uppercase tracking-[0.4em] mt-6 flex items-center gap-2 mb-6 ${
+                      (currentUser?.planName || (currentUser as any)?.plan) && (currentUser?.planName || (currentUser as any)?.plan) !== 'NONE' && (!currentUser?.expiryDate && !(currentUser as any)?.expiry || new Date(currentUser?.expiryDate || (currentUser as any)?.expiry) >= new Date()) ? 'text-green-500' : 'text-red-500'
+                    }`}>
+                       {(currentUser?.planName || (currentUser as any)?.plan) && (currentUser?.planName || (currentUser as any)?.plan) !== 'NONE' && (!currentUser?.expiryDate && !(currentUser as any)?.expiry || new Date(currentUser?.expiryDate || (currentUser as any)?.expiry) >= new Date()) ? (
+                         <><ShieldCheck size={10} className="text-green-500" /> STATUS: ACTIVE</>
+                       ) : (
+                         <><AlertTriangle size={10} className="text-red-500" /> STATUS: INACTIVE</>
+                       )}
                     </span>
                     <button 
                       onClick={() => setCurrentView('requestUpgrade')}
@@ -1585,8 +1715,10 @@ export default function App() {
                     <h4 className="text-xl sm:text-2xl font-black text-white uppercase italic mb-4 tracking-tighter">
                       {currentUser?.expiryDate || (currentUser as any)?.expiry || 'PENDING'}
                     </h4>
-                    <span className={`inline-flex items-center gap-2 text-[8px] font-black px-3 py-1 rounded-lg uppercase tracking-[0.2em] ${currentUser?.expiryDate || (currentUser as any)?.expiry ? (new Date(currentUser?.expiryDate || (currentUser as any)?.expiry) < new Date() ? 'bg-red-600 text-white' : 'bg-green-600/10 text-green-500 border border-green-500/10') : 'bg-green-600/10 text-green-500 border border-green-500/10'}`}>
-                      {currentUser?.expiryDate || (currentUser as any)?.expiry ? (new Date(currentUser?.expiryDate || (currentUser as any)?.expiry) < new Date() ? 'EXPIRED' : 'ACTIVE') : 'ACTIVE'}
+                    <span className={`inline-flex items-center gap-2 text-[8px] font-black px-3 py-1 rounded-lg uppercase tracking-[0.2em] ${
+                      (currentUser?.planName || (currentUser as any)?.plan) && (currentUser?.planName || (currentUser as any)?.plan) !== 'NONE' && (!currentUser?.expiryDate && !(currentUser as any)?.expiry || new Date(currentUser?.expiryDate || (currentUser as any)?.expiry) >= new Date()) ? 'bg-green-600/10 text-green-500 border border-green-500/10' : 'bg-red-600 text-white'
+                    }`}>
+                      {(currentUser?.planName || (currentUser as any)?.plan) && (currentUser?.planName || (currentUser as any)?.plan) !== 'NONE' && (!currentUser?.expiryDate && !(currentUser as any)?.expiry || new Date(currentUser?.expiryDate || (currentUser as any)?.expiry) >= new Date()) ? 'ACTIVE' : (currentUser?.expiryDate || (currentUser as any)?.expiry) ? (new Date(currentUser?.expiryDate || (currentUser as any)?.expiry) < new Date() ? 'EXPIRED' : 'INACTIVE') : 'INACTIVE'}
                     </span>
                   </div>
                 </div>

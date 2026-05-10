@@ -11,6 +11,7 @@
         "planPrice": { "type": "string", "description": "Price of the plan" },
         "expiryDate": { "type": "string", "format": "date", "description": "When the plan expires" },
         "features": { "type": "array", "items": { "type": "string" }, "description": "Features included in the plan" },
+        "profileImage": { "type": "string", "description": "Base64 string or URL of the user's profile image" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },

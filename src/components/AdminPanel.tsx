@@ -1103,6 +1103,14 @@ export default function AdminPanel({
                                     <span className="text-[8px] font-black bg-white/5 text-zinc-500 px-2.5 py-1 rounded-md uppercase tracking-widest border border-white/5">
                                       {movie.quality || 'HD'}
                                     </span>
+                                    {movie.links && movie.links.map((link: any, i: number) => {
+                                      const lbl = typeof link === 'object' ? (link.label || link.quality) : '';
+                                      return lbl ? (
+                                        <span key={`link-${i}`} className="text-[7px] font-black bg-red-600/5 text-red-500 px-1.5 py-0.5 rounded-md uppercase tracking-widest border border-red-600/20">
+                                          {lbl}
+                                        </span>
+                                      ) : null;
+                                    })}
                                     {movie.language && (
                                       <span className="text-[8px] font-black bg-white/5 text-zinc-500 px-2.5 py-1 rounded-md uppercase tracking-widest border border-white/5">
                                         {movie.language}

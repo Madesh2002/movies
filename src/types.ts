@@ -31,6 +31,7 @@ export interface User {
   trxId?: string;
   balance?: string | number;
   features?: string[];
+  profileImage?: string;
   createdAt?: any;
   updatedAt?: any;
 }
